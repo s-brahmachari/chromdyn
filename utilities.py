@@ -97,7 +97,7 @@ class Tester:
  
     def bad_solvent_with_self_avoidance(self):
         # List of trap stiffness values to iterate over
-        chi_values = [0.0, -0.01,-0.05]
+        chi_values = [0.0, -0.01,-0.02]
         Np=1000
         # Initialize topology generator and generate polymer topology
         generator = TopologyGenerator()
