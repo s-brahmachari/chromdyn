@@ -3,6 +3,73 @@ import os
 import openmm.unit as unit
 import numpy as np
 
+class StabilityReporter:
+    """
+    A custom reporter that checks system stability during simulation runs.
+    If per-particle kinetic or potential energies exceed thresholds, velocities are reinitialized.
+    """
+    def __init__(self, simulation, reportInterval=1000, 
+                 kinetic_threshold=5.0, potential_threshold=1000.0, scale=1.0, output_file=None):
+        """
+        Args:
+            simulation (Simulation): OpenMM Simulation object.
+            reportInterval (int): Number of steps between checks.
+            kinetic_threshold (float): Max kinetic energy per particle [kJ/mol].
+            potential_threshold (float): Max absolute potential energy per particle [kJ/mol].
+            scale (float): Scaling factor for velocity reinitialization.
+            output_file (str): Optional file to log stability events.
+        """
+        self.simulation = simulation
+        self.interval = reportInterval
+        self.kinetic_threshold = kinetic_threshold
+        self.potential_threshold = potential_threshold
+        self.scale = scale
+        self.output_file = output_file
+        self.num_particles = self.simulation.topology.getNumAtoms()
+
+    def describeNextReport(self, simulation):
+        """
+        Required by OpenMM Reporter interface. Specifies when the next report should occur.
+        """
+        return (self.interval, True, True, False, False)  # Need energies and positions
+
+    def report(self, simulation, state):
+        """
+        Main method called at every reportInterval steps. Checks energies and reinitializes velocities if needed.
+        """
+        # Retrieve energies
+        e_kinetic = state.getKineticEnergy().value_in_unit(unit.kilojoules_per_mole) / self.num_particles
+        e_potential = state.getPotentialEnergy().value_in_unit(unit.kilojoules_per_mole) / self.num_particles
+
+        # Prepare message
+        msg = (f"[Stability Check] Step {simulation.currentStep}: "
+               f"Kinetic (per particle) = {e_kinetic:.2f} kJ/mol, "
+               f"Potential (per particle) = {e_potential:.2f} kJ/mol")
+
+        if e_kinetic > self.kinetic_threshold or abs(e_potential) > self.potential_threshold:
+            # If thresholds exceeded, reinitialize velocities
+            self.reinitialize_velocities()
+            msg += " --> [WARNING] Reinitialized velocities due to instability."
+        else:
+            msg += " --> [OK] Stable."
+
+        # Print to console
+        print(msg)
+
+        # Optionally log to file
+        if self.output_file:
+            with open(self.output_file, "a") as f:
+                f.write(msg + "\n")
+
+    def reinitialize_velocities(self):
+        """Reinitialize random velocities with scaling."""
+        temperature = self.simulation.integrator.getTemperature()
+        sigma = np.sqrt(temperature / self.simulation.system.getParticleMass(0))  # Assuming uniform mass
+        velocities = np.random.normal(0, sigma, size=(self.num_particles, 3)) * self.scale
+        velocities_quantity = unit.Quantity(velocities, unit.nanometers / unit.picoseconds)
+        self.simulation.context.setVelocities(velocities_quantity)
+        print("[INFO] Velocities reinitialized.")
+
 class StateAnalyzer:
     def __init__(self, simulation, output_dir="output"):
         self.simulation = simulation

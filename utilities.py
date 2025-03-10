@@ -94,8 +94,54 @@ class Tester:
         for kr, rg in results:
             print(f"{kr:<20} {rg:<25.4f}")
         print("="*50)
-    
+ 
+    def bad_solvent_with_self_avoidance(self):
+        # List of trap stiffness values to iterate over
+        chi_values = [0.0, -0.01,-0.05]
+        Np=1000
+        # Initialize topology generator and generate polymer topology
+        generator = TopologyGenerator()
+        generator.gen_top([Np])  # Generate a chain of 1000 units
+
+        # Store results: list of (kr, Rg)
+        results = []
+
+        # Iterate over trap stiffness values
+        for chi in chi_values:
+            print(f"\n[INFO] Running simulation with Harmonic Trap stiffness kr = {chi}\n" + "-"*60)
+            
+            # Initialize simulation object
+            sim = ChromatinDynamics(generator.topology, integrator='langevin', platform_name="CPU", output_dir=f"bad_solvent_chi_{chi}")
+            
+            # Setup system with harmonic trap
+            sim.system_setup(mode='bad_solvent_collapse', chi=chi)
+            
+            # Setup simulation (platform, integrator, positions)
+            sim.simulation_setup()
+            
+            # Run a short simulation to let system respond to trap (e.g., 100 steps)
+            sim.run(10000)
+            sim.analyzer.print_force_info()
+            # Compute Radius of Gyration (Rg)
+            Rg = sim.analyzer.compute_RG()
+            
+            # Store result
+            results.append((chi, Rg))
+
+        # ----------------------
+        # Final summary table
+        # ----------------------
+        print("\n" + "="*50)
+        print(f" Radius of Gyration (Rg) vs repulsion distance | N = {Np}")
+        print("="*50)
+        print(f"{'Trap Stiffness (kr)':<20} {'Radius of Gyration (nm)':<25}")
+        print("-"*50)
+        for kr, rg in results:
+            print(f"{kr:<20} {rg:<25.4f}")
+        print("="*50)
+           
 if __name__ == "__main__":
     test = Tester()
     # test.harmtrap()
-    test.harmtrap_with_self_avoidance()
+    # test.harmtrap_with_self_avoidance()
+    test.bad_solvent_with_self_avoidance()

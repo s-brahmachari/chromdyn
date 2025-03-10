@@ -18,7 +18,7 @@ import openmm.unit as unit
 from platforms import PlatformManager
 from integrators import IntegratorManager
 from forcefield import ForceFieldManager
-from analyzer import StateAnalyzer
+from analyzers import StateAnalyzer, StabilityReporter
 
 # -------------------------------------------------------------------
 # ChromatinDynamics: Main simulation class
@@ -33,6 +33,7 @@ class ChromatinDynamics:
         self.platform_manager = PlatformManager(platform_name)
         self.integrator_manager = IntegratorManager(integrator=integrator)
         self.force_field_manager = ForceFieldManager(self.topology)
+        
         self.simulation = None
         self.analyzer = None
 
@@ -41,7 +42,7 @@ class ChromatinDynamics:
         with open(seq_file, "r") as f:
             return [line.split()[1] for line in f if line.strip()]
 
-    def system_setup(self, mode='default', interaction_matrix=None, k_res=1.0, r_rep=1.0):
+    def system_setup(self, mode='default', interaction_matrix=None, k_res=1.0, r_rep=1.0, chi=0.0):
         """Set up system and force fields."""
         
         for _ in range(self.topology.getNumAtoms()):
@@ -70,6 +71,20 @@ class ChromatinDynamics:
             self.force_field_manager.add_harmonic_bonds(self.system)
             self.force_field_manager.add_harmonic_trap(self.system, kr=k_res)
             self.force_field_manager.add_self_avoidance(self.system, r0=r_rep)
+            
+        elif mode=="bad_solvent_collapse":
+            
+            type_labels = ["A", "B", "C", "D"]
+            interaction_matrix = interaction_matrix or [
+                [chi, 0.0, -0.15, -0.1],
+                [0.0, -0.3, -0.18, -0.12],
+                [-0.15, -0.18, -0.35, -0.14],
+                [-0.1, -0.12, -0.14, -0.4],
+            ]
+            
+            self.force_field_manager.add_harmonic_bonds(self.system)
+            self.force_field_manager.add_type_to_type_interaction(self.system, interaction_matrix, type_labels)
+            
 
     def simulation_setup(self):
         """Set up simulation components."""
@@ -77,7 +92,7 @@ class ChromatinDynamics:
         platform = self.platform_manager.get_platform()
         self.simulation = Simulation(self.topology, self.system, integrator, platform)
         self.analyzer = StateAnalyzer(self.simulation, output_dir=self.output_dir)
-
+        # self.stability_manager = StabilityReporter(self.simulation,reportInterval=1000)
         # Initial random positions
         positions = np.random.random((self.num_particles, 3))
         self.simulation.context.setPositions(positions)
@@ -105,10 +120,10 @@ class ChromatinDynamics:
         """Check stability and reinitialize velocities if necessary."""
         state = self.simulation.context.getState(getPositions=True, getVelocities=True, getEnergy=True)
         positions = state.getPositions(asNumpy=True).value_in_unit(unit.nanometers)
-        velocities = state.getVelocities(asNumpy=True).value_in_unit(unit.nanometers/unit.picoseconds)
+        # velocities = state.getVelocities(asNumpy=True).value_in_unit(unit.nanometers/unit.picoseconds)
         e_kinetic = state.getKineticEnergy().value_in_unit(unit.kilojoules_per_mole) / self.num_particles
 
-        if (np.isnan(positions).any() or np.isnan(velocities).any() or np.isnan(e_kinetic) or e_kinetic > kinetic_threshold):
+        if (np.isnan(positions).any() or np.isnan(e_kinetic) or e_kinetic > kinetic_threshold ):
             print(f"[WARNING] Instability detected (eK={e_kinetic:.2f}). Reinitializing velocities.")
             self.reinitialize_velocities(scale)
 

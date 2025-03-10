@@ -209,7 +209,7 @@ class ForceFieldManager:
         """
         
         type_list = [atom.element for atom in self.topology.atoms()]
-        print(type_list)
+        # print(type_list)
         # Unique types used in this polymer system
         used_types = sorted(set(type_list))
         print(f"[INFO] Types used in polymer: {used_types}")
