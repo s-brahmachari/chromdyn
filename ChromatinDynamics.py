@@ -18,7 +18,8 @@ import openmm.unit as unit
 from platforms import PlatformManager
 from integrators import IntegratorManager
 from forcefield import ForceFieldManager
-from analyzers import StateAnalyzer, StabilityReporter
+from analyzers import StateAnalyzer, HiCManager
+# from optimization import HiCInversion
 
 # -------------------------------------------------------------------
 # ChromatinDynamics: Main simulation class
@@ -33,34 +34,32 @@ class ChromatinDynamics:
         self.platform_manager = PlatformManager(platform_name)
         self.integrator_manager = IntegratorManager(integrator=integrator)
         self.force_field_manager = ForceFieldManager(self.topology)
-        
         self.simulation = None
         self.analyzer = None
-
+    
+    # def optimizer_setup(self,method='hicinv', hicmap=None):
+    #     if method.lower() == 'hicinv':
+    #         hicman = HiCManager(hicmap)
+    #         self.optimizer = HiCInversion(hicman.get_hic_map())
+    
+    # def optimize_step(self):
+    #     pass
+            
     def read_sequence(self, seq_file):
         """Reads a sequence file and returns list of types."""
         with open(seq_file, "r") as f:
             return [line.split()[1] for line in f if line.strip()]
 
-    def system_setup(self, mode='default', interaction_matrix=None, k_res=1.0, r_rep=1.0, chi=0.0):
+    def system_setup(self, mode='default', interaction_matrix=None, k_res=1.0, r_rep=1.0, chi=-0.02):
         """Set up system and force fields."""
         
         for _ in range(self.topology.getNumAtoms()):
                 self.system.addParticle(1.0)
-        
         self.force_field_manager.removeCOM(self.system)
         
         if mode == 'default':
-            type_labels = ["A", "B", "C", "D"]
-            interaction_matrix = interaction_matrix or [
-                [-0.25, 0.0, -0.15, -0.1],
-                [0.0, -0.3, -0.18, -0.12],
-                [-0.15, -0.18, -0.35, -0.14],
-                [-0.1, -0.12, -0.14, -0.4],
-            ]
-
             self.force_field_manager.add_harmonic_bonds(self.system)
-            
+            type_labels, interaction_matrix = self.force_field_manager._get_type_interaction_matrix('./type_interaction_table.csv')
             self.force_field_manager.add_type_to_type_interaction(self.system, interaction_matrix, type_labels)
             
         elif mode=='harmtrap':
@@ -69,17 +68,15 @@ class ChromatinDynamics:
         
         elif mode=="harmtrap_with_self_avoidance":
             self.force_field_manager.add_harmonic_bonds(self.system)
-            self.force_field_manager.add_harmonic_trap(self.system, kr=k_res)
-            self.force_field_manager.add_self_avoidance(self.system, r0=r_rep)
+            self.force_field_manager.add_harmonic_trap(self.system, k=k_res)
+            self.force_field_manager.add_self_avoidance(self.system, r=r_rep)
             
         elif mode=="bad_solvent_collapse":
             
-            type_labels = ["A", "B", "C", "D"]
-            interaction_matrix = interaction_matrix or [
-                [chi, 0.0, -0.15, -0.1],
-                [0.0, -0.3, -0.18, -0.12],
-                [-0.15, -0.18, -0.35, -0.14],
-                [-0.1, -0.12, -0.14, -0.4],
+            type_labels = ["A", "B"]
+            interaction_matrix = [
+                [chi, 0.0],
+                [0.0, 0.0],
             ]
             
             self.force_field_manager.add_harmonic_bonds(self.system)
@@ -96,7 +93,7 @@ class ChromatinDynamics:
         # Initial random positions
         positions = np.random.random((self.num_particles, 3))
         self.simulation.context.setPositions(positions)
-
+        print(f"[INFO] Chosen platform: {platform.getName()}")
         # Energy reporting
         self.simulation.reporters.append(
             StateDataReporter(os.path.join(self.output_dir, "energy_report.txt"), 1000,
@@ -133,8 +130,60 @@ class ChromatinDynamics:
         velocities = np.random.normal(0, sigma, size=(self.num_particles, 3)) * scale
         self.simulation.context.setVelocities(unit.Quantity(velocities, unit.nanometers/unit.picoseconds))
         print("[INFO] Velocities reinitialized.")
+        
+    def print_force_info(self):
+        """
+        Prints a detailed summary of all forces in the system, including:
+        - Force index, class, and human-readable name
+        - Force group number
+        - Number of particles and bonds (if applicable)
+        - Energy contribution per particle (kJ/mol)
+        """
 
+        system = self.simulation.system
+        context = self.simulation.context
+        num_particles = system.getNumParticles()
 
+        # Header
+        print("\n{:<6} {:<30} {:<25} {:<8} {:<15} {:<12} {:<30}".format(
+            "Index", "Force Class", "Force Name", "Group", "Num Particles", "Num Bonds", "Energy per Particle"
+        ))
+        print("-" * 160)
+
+        # Loop over forces
+        for i, force in enumerate(system.getForces()):
+            group = force.getForceGroup()
+            force_class = force.__class__.__name__
+
+            # Proper way to get force name (use a force -> name map that you maintain)
+            force_name = self.force_field_manager.force_name_map.get(i, "Unnamed")  # fallback if not found
+
+            # Get energy for this force group
+            state = context.getState(getEnergy=True, groups={group})
+            total_energy = state.getPotentialEnergy().value_in_unit(unit.kilojoules_per_mole)
+            per_particle_energy = total_energy / num_particles if num_particles > 0 else 0.0
+
+            # Try to get num_particles and num_bonds
+            num_particles_force = 'N/A'
+            num_bonds_force = 'N/A'
+
+            if hasattr(force, 'getNumParticles'):
+                try:
+                    num_particles_force = force.getNumParticles()
+                except:
+                    pass
+
+            if hasattr(force, 'getNumBonds'):
+                try:
+                    num_bonds_force = force.getNumBonds()
+                except:
+                    pass
+
+            # Print formatted row
+            print(f"{i:<6} {force_class:<30} {force_name:<25} {group:<8} {num_particles_force:<15} {num_bonds_force:<12} {per_particle_energy:<30.5f}")
+
+        print("-" * 160)
+        print(f"[INFO] Total number of particles in system: {num_particles}\n")
 # # from PolymerSimulation import *
 # #!/usr/bin/env python
 # """

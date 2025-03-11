@@ -21,17 +21,17 @@ class Tester:
             print(f"\n[INFO] Running simulation with Harmonic Trap stiffness kr = {kr}\n" + "-"*60)
             
             # Initialize simulation object
-            sim = ChromatinDynamics(generator.topology, integrator='langevin', platform_name="CPU", output_dir=f"harmtrap_kr_{kr}")
+            sim = ChromatinDynamics(generator.topology, integrator='langevin', platform_name="OpenCL", output_dir=f"harmtrap_kr_{kr}")
             
             # Setup system with harmonic trap
-            sim.system_setup(mode='harmtrap', kr=kr)
+            sim.system_setup(mode='harmtrap', k_res=kr)
             
             # Setup simulation (platform, integrator, positions)
             sim.simulation_setup()
             
             # Run a short simulation to let system respond to trap (e.g., 100 steps)
             sim.run(10000)
-            sim.analyzer.print_force_info()
+            sim.print_force_info()
             # Compute Radius of Gyration (Rg)
             Rg = sim.analyzer.compute_RG()
             
@@ -111,7 +111,7 @@ class Tester:
             print(f"\n[INFO] Running simulation with Harmonic Trap stiffness kr = {chi}\n" + "-"*60)
             
             # Initialize simulation object
-            sim = ChromatinDynamics(generator.topology, integrator='langevin', platform_name="CPU", output_dir=f"bad_solvent_chi_{chi}")
+            sim = ChromatinDynamics(generator.topology, integrator='langevin', platform_name="opencl", output_dir=f"bad_solvent_chi_{chi}")
             
             # Setup system with harmonic trap
             sim.system_setup(mode='bad_solvent_collapse', chi=chi)
@@ -121,7 +121,7 @@ class Tester:
             
             # Run a short simulation to let system respond to trap (e.g., 100 steps)
             sim.run(10000)
-            sim.analyzer.print_force_info()
+            sim.print_force_info()
             # Compute Radius of Gyration (Rg)
             Rg = sim.analyzer.compute_RG()
             
@@ -142,6 +142,12 @@ class Tester:
            
 if __name__ == "__main__":
     test = Tester()
-    # test.harmtrap()
+    test.harmtrap()
     # test.harmtrap_with_self_avoidance()
-    test.bad_solvent_with_self_avoidance()
+    # test.bad_solvent_with_self_avoidance()
+    from platforms import PlatformManager
+    
+    pm = PlatformManager()
+    pm.list_openmm_platforms()
+    
+        
