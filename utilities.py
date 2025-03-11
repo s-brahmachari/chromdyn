@@ -1,153 +1,137 @@
 from topology import TopologyGenerator
 from ChromatinDynamics import ChromatinDynamics
+from logger import LoggerManager  # Assuming you have a centralized LoggerManager
 
-class Tester:
+class Run:
     def __init__(self):
-        pass
+        self.logger = LoggerManager().get_logger(__name__)
+        self.logger.info("[Tester] Initialized.")
 
     def harmtrap(self):
-        # List of trap stiffness values to iterate over
         kr_values = [0, 0.1, 1, 5]
-        Np=1000
-        # Initialize topology generator and generate polymer topology
-        generator = TopologyGenerator()
-        generator.gen_top([Np])  # Generate a chain of 1000 units
+        Np = 1000
 
-        # Store results: list of (kr, Rg)
+        generator = TopologyGenerator()
+        generator.gen_top([Np])
+
         results = []
 
-        # Iterate over trap stiffness values
         for kr in kr_values:
-            print(f"\n[INFO] Running simulation with Harmonic Trap stiffness kr = {kr}\n" + "-"*60)
-            
-            # Initialize simulation object
+            self.logger.info(f"Running simulation with Harmonic Trap stiffness kr = {kr}")
+            self.logger.info("-" * 80)
+
             sim = ChromatinDynamics(generator.topology, integrator='langevin', platform_name="OpenCL", output_dir=f"harmtrap_kr_{kr}")
-            
-            # Setup system with harmonic trap
             sim.system_setup(mode='harmtrap', k_res=kr)
-            
-            # Setup simulation (platform, integrator, positions)
             sim.simulation_setup()
-            
-            # Run a short simulation to let system respond to trap (e.g., 100 steps)
+
             sim.run(10000)
             sim.print_force_info()
-            # Compute Radius of Gyration (Rg)
+
             Rg = sim.analyzer.compute_RG()
-            
-            # Store result
             results.append((kr, Rg))
 
-        # ----------------------
-        # Final summary table
-        # ----------------------
-        print("\n" + "="*50)
-        print(f" Radius of Gyration (Rg) vs Trap Stiffness (kr) | N = {Np}")
-        print("="*50)
-        print(f"{'Trap Stiffness (kr)':<20} {'Radius of Gyration (nm)':<25}")
-        print("-"*50)
-        for kr, rg in results:
-            print(f"{kr:<20} {rg:<25.4f}")
-        print("="*50)
+        self._log_final_results(results, "Radius of Gyration (Rg) vs Trap Stiffness (kr)", Np)
 
     def harmtrap_with_self_avoidance(self):
-        # List of trap stiffness values to iterate over
         r_rep_values = [0.1, 1, 1.5]
-        Np=1000
-        # Initialize topology generator and generate polymer topology
-        generator = TopologyGenerator()
-        generator.gen_top([Np])  # Generate a chain of 1000 units
+        Np = 1000
 
-        # Store results: list of (kr, Rg)
+        generator = TopologyGenerator()
+        generator.gen_top([Np])
+
         results = []
 
-        # Iterate over trap stiffness values
         for r_rep in r_rep_values:
-            print(f"\n[INFO] Running simulation with Harmonic Trap stiffness kr = {r_rep}\n" + "-"*60)
-            
-            # Initialize simulation object
-            sim = ChromatinDynamics(generator.topology, integrator='langevin', platform_name="CPU", output_dir=f"harmtrap_rep_{r_rep}")
-            
-            # Setup system with harmonic trap
+            self.logger.info(f"Running simulation with Harmonic Trap + Self-Avoidance (r_rep = {r_rep})")
+            self.logger.info("-" * 80)
+
+            sim = ChromatinDynamics(generator.topology, integrator='langevin', platform_name="OpenCL", output_dir=f"harmtrap_rep_{r_rep}")
             sim.system_setup(mode='harmtrap_with_self_avoidance', r_rep=r_rep)
-            
-            # Setup simulation (platform, integrator, positions)
             sim.simulation_setup()
-            
-            # Run a short simulation to let system respond to trap (e.g., 100 steps)
-            sim.run(10000)
-            sim.analyzer.print_force_info()
-            # Compute Radius of Gyration (Rg)
-            Rg = sim.analyzer.compute_RG()
-            
-            # Store result
-            results.append((r_rep, Rg))
 
-        # ----------------------
-        # Final summary table
-        # ----------------------
-        print("\n" + "="*50)
-        print(f" Radius of Gyration (Rg) vs repulsion distance | N = {Np}")
-        print("="*50)
-        print(f"{'Trap Stiffness (kr)':<20} {'Radius of Gyration (nm)':<25}")
-        print("-"*50)
-        for kr, rg in results:
-            print(f"{kr:<20} {rg:<25.4f}")
-        print("="*50)
- 
-    def bad_solvent_with_self_avoidance(self):
-        # List of trap stiffness values to iterate over
-        chi_values = [0.0, -0.01,-0.02]
-        Np=1000
-        # Initialize topology generator and generate polymer topology
-        generator = TopologyGenerator()
-        generator.gen_top([Np])  # Generate a chain of 1000 units
-
-        # Store results: list of (kr, Rg)
-        results = []
-
-        # Iterate over trap stiffness values
-        for chi in chi_values:
-            print(f"\n[INFO] Running simulation with Harmonic Trap stiffness kr = {chi}\n" + "-"*60)
-            
-            # Initialize simulation object
-            sim = ChromatinDynamics(generator.topology, integrator='langevin', platform_name="opencl", output_dir=f"bad_solvent_chi_{chi}")
-            
-            # Setup system with harmonic trap
-            sim.system_setup(mode='bad_solvent_collapse', chi=chi)
-            
-            # Setup simulation (platform, integrator, positions)
-            sim.simulation_setup()
-            
-            # Run a short simulation to let system respond to trap (e.g., 100 steps)
             sim.run(10000)
             sim.print_force_info()
-            # Compute Radius of Gyration (Rg)
+
             Rg = sim.analyzer.compute_RG()
-            
-            # Store result
+            results.append((r_rep, Rg))
+
+        self._log_final_results(results, "Radius of Gyration (Rg) vs Repulsion Distance (r_rep)", Np)
+
+    def bad_solvent_with_self_avoidance(self):
+        chi_values = [0.0, -0.2,-0.5,-1.0]
+        Np = 1000
+
+        generator = TopologyGenerator()
+        generator.gen_top([Np])
+
+        results = []
+
+        for chi in chi_values:
+            self.logger.info(f"Running simulation in Bad Solvent Condition (Chi = {chi})")
+            self.logger.info("-" * 80)
+
+            sim = ChromatinDynamics(generator.topology, integrator='langevin', platform_name="OpenCL", output_dir=f"bad_solvent_chi_{chi}")
+            sim.system_setup(mode='bad_solvent_collapse', chi=chi)
+            sim.simulation_setup()
+
+            sim.run(10000)
+            sim.print_force_info()
+
+            Rg = sim.analyzer.compute_RG()
             results.append((chi, Rg))
 
-        # ----------------------
-        # Final summary table
-        # ----------------------
-        print("\n" + "="*50)
-        print(f" Radius of Gyration (Rg) vs repulsion distance | N = {Np}")
-        print("="*50)
-        print(f"{'Trap Stiffness (kr)':<20} {'Radius of Gyration (nm)':<25}")
-        print("-"*50)
-        for kr, rg in results:
-            print(f"{kr:<20} {rg:<25.4f}")
-        print("="*50)
-           
-if __name__ == "__main__":
-    test = Tester()
-    test.harmtrap()
-    # test.harmtrap_with_self_avoidance()
-    # test.bad_solvent_with_self_avoidance()
-    from platforms import PlatformManager
+        self._log_final_results(results, "Radius of Gyration (Rg) vs Chi (Bad Solvent)", Np)
     
-    pm = PlatformManager()
-    pm.list_openmm_platforms()
-    
+    def rouse(self,):
         
+        Np = 1000
+
+        generator = TopologyGenerator()
+        generator.gen_top([Np])
+
+        self.logger.info(f"Running simulation: SAW)")
+        self.logger.info("-" * 80)
+
+        sim = ChromatinDynamics(generator.topology, integrator='langevin', platform_name="OpenCL", output_dir=f"rouse")
+        sim.system_setup(mode='rouse')
+        sim.simulation_setup()
+
+        sim.run(10000)
+        sim.print_force_info()
+
+        Rg = sim.analyzer.compute_RG()
+        
+        self.logger.info(f"Rouse Radius of Gyration {Rg}")
+        self.logger.info("-"*60)
+
+    def saw(self,):
+        
+        Np = 1000
+
+        generator = TopologyGenerator()
+        generator.gen_top([Np])
+
+        self.logger.info(f"Running simulation: SAW)")
+        self.logger.info("-" * 80)
+
+        sim = ChromatinDynamics(generator.topology, integrator='langevin', platform_name="OpenCL", output_dir=f"rouse")
+        sim.system_setup(mode='saw')
+        sim.simulation_setup()
+
+        sim.run(10000)
+        sim.print_force_info()
+
+        Rg = sim.analyzer.compute_RG()
+        
+        self.logger.info(f"SAW Radius of Gyration {Rg}")
+        self.logger.info("-"*60)
+
+    def _log_final_results(self, results, title, Np):
+        self.logger.info("\n" + "=" * 60)
+        self.logger.info(f" {title} | N = {Np}")
+        self.logger.info("=" * 60)
+        self.logger.info(f"{'Parameter':<20} {'Radius of Gyration (nm)':<30}")
+        self.logger.info("-" * 60)
+        for param, rg in results:
+            self.logger.info(f"{param:<20} {rg:<30.4f}")
+        self.logger.info("=" * 60)

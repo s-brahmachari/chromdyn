@@ -1,16 +1,17 @@
 from openmm import Discrete2DFunction, HarmonicBondForce, CustomNonbondedForce, CustomExternalForce, CMMotionRemover
 import numpy as np
 import pandas as pd
+from logger import LoggerManager
 
 # -------------------------------------------------------------------
 # ForceField Manager: Sets up polymer forces (e.g., harmonic bonds)
 # -------------------------------------------------------------------
 class ForceFieldManager:
-    def __init__(self, topology, 
+    def __init__(self, topology, logger=None,
                  Nonbonded_cutoff = 3.0,
                  Nonbonded_method = 'NonPeriodic',
                  ):
-        
+        self.logger = logger or LoggerManager().get_logger()
         self.topology = topology
         self.num_particles = topology.getNumAtoms()
         
@@ -25,6 +26,8 @@ class ForceFieldManager:
         force_index = system.addForce(force_obj)
         self.forceDict[name] = force_obj
         self.force_name_map[force_index] = name
+        self.logger.info(f"{name} force successfully added to system.")
+        self.logger.info('-'*50)
     
     def removeCOM(self, system, **kwargs):
         """
@@ -38,11 +41,12 @@ class ForceFieldManager:
         """
         
         # Extract parameters from kwargs with defaults
-        frequency = int(kwargs.get('frequency', 10))       # Default frequency = 10
+        frequency = int(kwargs.get('frequency', 100))       # Default frequency = 10
         forcegroup = int(kwargs.get('forcegroup', 31))    # Default force group = 31
 
         # Logging to provide clear feedback
-        print(f"[INFO] Adding CMMotionRemover with frequency: {frequency} and force group: {forcegroup}")
+        self.logger.info('-'*50)
+        self.logger.info(f"Adding CMMotionRemover with frequency: {frequency} and force group: {forcegroup}")
 
         # Initialize the CMMotionRemover and set force group
         cmm_remove = CMMotionRemover(frequency)
@@ -50,9 +54,6 @@ class ForceFieldManager:
 
         # Add to system and store in force dictionary
         self.register_force(system, cmm_remove, "CMMRemover")
-        
-
-        print("[INFO] Center of mass motion remover successfully added.")
         return cmm_remove   
 
     def add_harmonic_bonds(self, system, **kwargs):
@@ -74,22 +75,21 @@ class ForceFieldManager:
         forcegroup = int(kwargs.get('forcegroup', 0))             # Default force group
         
         # Logging for transparency
-        print(f"[INFO] Adding harmonic bonds with parameters:")
-        print(f"       Bond length: {bond_r}")
-        print(f"       Bond spring constant (k): {bond_k}")
-        print(f"       Force group: {forcegroup}")
-
+        self.logger.info('-'*50)
+        self.logger.info(f"Adding harmonic bonds with parameters:")
+        self.logger.info(f"Bond length: {bond_r}")
+        self.logger.info(f"Bond spring constant (k): {bond_k}")
+        self.logger.info(f"Force group: {forcegroup}")
         # Create HarmonicBondForce and assign to force group
         bond_force = HarmonicBondForce()
         bond_force.setForceGroup(forcegroup)
         
         # Add bonds defined in the topology
-        for bond in self.topology.bonds():
+        for i, bond in enumerate(self.topology.bonds()):
             bond_force.addBond(int(bond[0].id), int(bond[1].id), bond_r, bond_k)
-        
+        self.logger.info(f"Adding {i+1} bonds")
         # Add the force to the system and record in force dictionary
         self.register_force(system, bond_force,"HarmonicBonds")
-        print(f"[INFO] HarmonicBondForce successfully added with {bond_force.getNumBonds()} bonds.")
         return bond_force
 
     def add_harmonic_trap(self, system, **kwargs):
@@ -110,7 +110,8 @@ class ForceFieldManager:
         forcegroup = int(kwargs.get('forcegroup', 1))                   # Default forcegroup
 
         # Log the selected parameters
-        print(f"[INFO] Adding Harmonic Trap with kr={kr}, center={center}, force group={forcegroup}")
+        self.logger.info('-'*50)
+        self.logger.info(f"Adding Harmonic Trap with kr={kr}, center={center}, force group={forcegroup}")
 
         # Define the external force expression (harmonic trap potential)
         restraintForce = CustomExternalForce(
@@ -130,14 +131,11 @@ class ForceFieldManager:
 
         # Assign the force to the appropriate force group
         restraintForce.setForceGroup(forcegroup)
-
-        # Add force to system and store it for reference
         self.register_force(system, restraintForce, "HarmonicTrap")
         
-        print("[INFO] Harmonic trap successfully added to the system.")
         return restraintForce
     
-    def add_self_avoidance(self, system, verbose=True, **kwargs):
+    def add_self_avoidance(self, system, **kwargs):
         """
         Adds soft-core self-avoidance with flexible parameters passed via kwargs.
         
@@ -170,14 +168,10 @@ class ForceFieldManager:
         num_particles = getattr(self, 'num_particles', system.getNumParticles())
         for _ in range(num_particles):
             avoidance_force.addParticle(())
-
-        # Add force
+        self.logger.info('-'*50)
+        self.logger.info(f"Adding Self-avoidance force with parameters:")
+        self.logger.info(f"Ecut={Ecut}, k_rep={kSA}, r_rep={rSA}, cutoff={self.Nonbonded_cutoff}, group={forcegroup}")
         self.register_force(system, avoidance_force, "SelfAvoidance")
-        
-        if verbose:
-            print(f"[INFO] Self-avoidance force added with parameters: "
-                f"Ecut={Ecut}, k_rep={kSA}, r_rep={rSA}, "
-                f"cutoff={self.Nonbonded_cutoff}, group={forcegroup}")
         
         return avoidance_force
     
@@ -204,18 +198,17 @@ class ForceFieldManager:
         # ---- Extract type list from topology ---- #
         type_list = [atom.element for atom in self.topology.atoms()]
         used_types = sorted(set(type_list))  # Unique types used in polymer
-
-        if verbose:
-            print(f"[INFO] Types detected in polymer: {used_types}")
+        self.logger.info('-'*50)
+        self.logger.info(f"Types detected in polymer: {used_types}")
 
         # ---- Check type consistency with interaction matrix ---- #
         missing_types = [t for t in used_types if t not in type_labels]
         if missing_types:
-            raise ValueError(f"[ERROR] Types found in topology but missing in interaction matrix: {missing_types}")
+            raise ValueError(f"Types found in topology but missing in interaction matrix: {missing_types}")
 
         unused_types = [t for t in type_labels if t not in used_types]
         if unused_types and verbose:
-            print(f"[WARNING] Types defined in interaction matrix but not used in topology: {unused_types}")
+            self.logger.warning(f"Types defined in interaction matrix but not used in topology: {unused_types}")
 
         # ---- Map types and subset interaction matrix ---- #
         type_to_idx = {label: idx for idx, label in enumerate(type_labels)}
@@ -246,12 +239,10 @@ class ForceFieldManager:
         for type_label in type_list:
             type_force.addParticle([float(type_idx_map[type_label])])  # Map original type to reduced index
 
-        # ---- Add force to system ---- #
-        self.register_force(system, type_force,"TypeToType")
-        # ---- Logging ---- #
-        if verbose:
-            print(f"[INFO] Type-to-Type interaction added (force group {force_group}, {num_types} types).")
-            print(f"[INFO] Parameters -> mu: {self.mu}, rc: {self.rc},cutoff: {self.Nonbonded_cutoff}")
+        self.logger.info(f"Adding Type-to-Type interaction (force group {force_group}, {num_types} types).")
+        self.logger.info(f"Parameters -> mu: {self.mu}, rc: {self.rc},cutoff: {self.Nonbonded_cutoff}")
 
+        self.register_force(system, type_force,"TypeToType")
+            
         return type_force
 

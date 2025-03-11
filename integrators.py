@@ -1,26 +1,85 @@
 from openmm import (LangevinIntegrator,BrownianIntegrator, CustomIntegrator)
-
+from logger import LoggerManager
 # -------------------------------------------------------------------
 # Integrator Manager: Creates integrators for Brownian or Langevin dynamics
 # -------------------------------------------------------------------
+# -------------------------------------------------------------------
+# Integrator Manager: Creates and manages OpenMM integrators with validation and logging
+# -------------------------------------------------------------------
+from openmm import LangevinIntegrator, BrownianIntegrator, CustomIntegrator
+from logger import LoggerManager
+
+# -------------------------------------------------------------------
+# Integrator Manager: Creates and manages OpenMM integrators with flexible kwargs
+# -------------------------------------------------------------------
 class IntegratorManager:
-    def __init__(self, integrator="langevin", temperature=300.0, friction=0.1, timestep=0.01, tcorr=1.0):
-        self.integrator = integrator.lower()
-        self.temperature = temperature
-        self.friction = friction
-        self.timestep = timestep
-        self.tcorr = tcorr
+    VALID_INTEGRATORS = ["brownian", "langevin", "active"]  # List of supported integrators
+    DEFAULT_PARAMS = {
+        "temperature": 300.0,
+        "friction": 0.1,
+        "timestep": 0.01,
+        "tcorr": 1.0,
+        "Fact": 0.0  # Placeholder if needed in future
+    }
 
-    def create_integrator(self):
-        if self.integrator == "brownian":
-            return BrownianIntegrator(self.temperature, self.friction, self.timestep)
-        elif self.integrator == "langevin":
-            return LangevinIntegrator(self.temperature, self.friction, self.timestep)
-        elif self.integrator == "active":
-            return ActiveBrownianIntegrator(self.temperature, self.friction, self.timestep, self.tcorr)
-        else:
-            raise ValueError("Unsupported dynamics type. Use 'brownian' or 'langevin'.")
+    def __init__(self, integrator="langevin", logger=None, **kwargs):
+        """
+        Initialize the IntegratorManager with flexible parameters.
 
+        Args:
+            integrator (str): Type of integrator ('brownian', 'langevin', 'active').
+            logger (Logger, optional): Logger instance. If None, initializes a default logger.
+            **kwargs: Optional parameters (temperature, friction, timestep, tcorr, Fact).
+        """
+        self.logger = logger or LoggerManager().get_logger(__name__)
+        
+        self.logger.info('-'*60)
+        # Load parameters with defaults
+        self.temperature = kwargs.get("temperature", self.DEFAULT_PARAMS["temperature"])
+        self.friction = kwargs.get("friction", self.DEFAULT_PARAMS["friction"])
+        self.timestep = kwargs.get("timestep", self.DEFAULT_PARAMS["timestep"])
+        self.tcorr = kwargs.get("tcorr", self.DEFAULT_PARAMS["tcorr"])
+        self.Fact = kwargs.get("Fact", self.DEFAULT_PARAMS["Fact"])
+
+        # Log initialization summary
+        self.logger.info(f"IntegratorManager initialized. Valid integrators {self.VALID_INTEGRATORS}")
+        self.logger.info('-'*60)
+
+    def create_integrator(self, integrator):
+        """
+        Create and return an OpenMM integrator based on initialized settings.
+
+        Returns:
+            OpenMM Integrator object.
+        """
+        try:
+            if integrator == "brownian":
+                self.logger.info("Creating BrownianIntegrator...")
+                self.logger.info(f"temperatute={self.temperature} | friction={self.friction} | timestep={self.timestep}")
+                return BrownianIntegrator(self.temperature, self.friction, self.timestep)
+
+            elif integrator == "langevin":
+                self.logger.info("Creating LangevinIntegrator...")
+                self.logger.info(f"temperatute={self.temperature} | friction={self.friction} | timestep={self.timestep}")
+                return LangevinIntegrator(self.temperature, self.friction, self.timestep)
+
+            elif integrator == "active":
+                self.logger.info(f"temperatute={self.temperature} | friction={self.friction} | timestep={self.timestep} | corr_time={self.tcorr} | active_force={self.Fact}")
+                self.logger.info("Creating ActiveBrownianIntegrator (custom active noise)...")
+                return ActiveBrownianIntegrator(
+                    temperature=self.temperature,
+                    collision_rate=self.friction,
+                    timestep=self.timestep,
+                    corr_time=self.tcorr
+                )
+
+        except Exception as e:
+            self.logger.exception(f"[ERROR] Failed to create integrator: {e}")
+            raise
+        
+# -------------------------------------------------------------------
+# ActiveBrownianIntegrator: Custom Integrator Class
+# -------------------------------------------------------------------
 
 class ActiveBrownianIntegrator(CustomIntegrator):
     R"""

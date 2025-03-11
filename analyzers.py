@@ -3,13 +3,13 @@ import os
 import openmm.unit as unit
 import numpy as np
 from topology import Topology
-
+from logger import LoggerManager
 class StabilityReporter:
     """
     A custom reporter that checks system stability during simulation runs.
     If per-particle kinetic or potential energies exceed thresholds, velocities are reinitialized.
     """
-    def __init__(self, simulation, reportInterval=1000, 
+    def __init__(self, simulation, reportInterval=1000,logger=None, 
                  kinetic_threshold=5.0, potential_threshold=1000.0, scale=1.0, output_file=None):
         """
         Args:
