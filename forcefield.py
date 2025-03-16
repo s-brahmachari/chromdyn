@@ -1,7 +1,7 @@
-from openmm import Discrete2DFunction, HarmonicBondForce, CustomNonbondedForce, CustomExternalForce, CMMotionRemover
+from openmm import Discrete2DFunction, HarmonicBondForce, CustomNonbondedForce, CustomExternalForce, CMMotionRemover, CustomBondForce
 import numpy as np
 import pandas as pd
-from logger import LoggerManager
+from logger import LogManager
 
 # -------------------------------------------------------------------
 # ForceField Manager: Sets up polymer forces (e.g., harmonic bonds)
@@ -11,7 +11,7 @@ class ForceFieldManager:
                  Nonbonded_cutoff = 3.0,
                  Nonbonded_method = 'NonPeriodic',
                  ):
-        self.logger = logger or LoggerManager().get_logger()
+        self.logger = logger or LogManager().get_logger()
         self.topology = topology
         self.num_particles = topology.getNumAtoms()
         
@@ -29,6 +29,10 @@ class ForceFieldManager:
         self.logger.info(f"{name} force successfully added to system.")
         self.logger.info('-'*50)
     
+    def add_exceptions_from_bonds(self, force):
+        for bond in self.topology.bonds():
+            force.addException(bond[0], bond[1], 0, 0)
+            
     def removeCOM(self, system, **kwargs):
         """
         Removes the center-of-mass (COM) motion from the system using CMMotionRemover.
@@ -45,7 +49,7 @@ class ForceFieldManager:
         forcegroup = int(kwargs.get('forcegroup', 31))    # Default force group = 31
 
         # Logging to provide clear feedback
-        self.logger.info('-'*50)
+        # self.logger.info('-'*50)
         self.logger.info(f"Adding CMMotionRemover with frequency: {frequency} and force group: {forcegroup}")
 
         # Initialize the CMMotionRemover and set force group
@@ -75,11 +79,7 @@ class ForceFieldManager:
         forcegroup = int(kwargs.get('forcegroup', 0))             # Default force group
         
         # Logging for transparency
-        self.logger.info('-'*50)
-        self.logger.info(f"Adding harmonic bonds with parameters:")
-        self.logger.info(f"Bond length: {bond_r}")
-        self.logger.info(f"Bond spring constant (k): {bond_k}")
-        self.logger.info(f"Force group: {forcegroup}")
+        # self.logger.info('-'*50)
         # Create HarmonicBondForce and assign to force group
         bond_force = HarmonicBondForce()
         bond_force.setForceGroup(forcegroup)
@@ -87,7 +87,10 @@ class ForceFieldManager:
         # Add bonds defined in the topology
         for i, bond in enumerate(self.topology.bonds()):
             bond_force.addBond(int(bond[0].id), int(bond[1].id), bond_r, bond_k)
-        self.logger.info(f"Adding {i+1} bonds")
+        
+        self.logger.info(f"Adding {i+1} harmonic bonds with parameters:")
+        self.logger.info(f"length: {bond_r}, spring constant (k): {bond_k}, group: {forcegroup}")
+        
         # Add the force to the system and record in force dictionary
         self.register_force(system, bond_force,"HarmonicBonds")
         return bond_force
@@ -110,7 +113,7 @@ class ForceFieldManager:
         forcegroup = int(kwargs.get('forcegroup', 1))                   # Default forcegroup
 
         # Log the selected parameters
-        self.logger.info('-'*50)
+        # self.logger.info('-'*50)
         self.logger.info(f"Adding Harmonic Trap with kr={kr}, center={center}, force group={forcegroup}")
 
         # Define the external force expression (harmonic trap potential)
@@ -168,9 +171,11 @@ class ForceFieldManager:
         num_particles = getattr(self, 'num_particles', system.getNumParticles())
         for _ in range(num_particles):
             avoidance_force.addParticle(())
-        self.logger.info('-'*50)
+        # self.logger.info('-'*50)
         self.logger.info(f"Adding Self-avoidance force with parameters:")
         self.logger.info(f"Ecut={Ecut}, k_rep={kSA}, r_rep={rSA}, cutoff={self.Nonbonded_cutoff}, group={forcegroup}")
+        # self.add_exceptions_from_bonds(avoidance_force)
+        avoidance_force.createExclusionsFromBonds([[int(bond[0].id),int(bond[1].id)] for bond in self.topology.bonds()], 1) 
         self.register_force(system, avoidance_force, "SelfAvoidance")
         
         return avoidance_force
@@ -208,7 +213,7 @@ class ForceFieldManager:
 
         unused_types = [t for t in type_labels if t not in used_types]
         if unused_types and verbose:
-            self.logger.warning(f"Types defined in interaction matrix but not used in topology: {unused_types}")
+            self.logger.debug(f"Types defined in interaction matrix but not used in topology: {unused_types}")
 
         # ---- Map types and subset interaction matrix ---- #
         type_to_idx = {label: idx for idx, label in enumerate(type_labels)}
@@ -241,8 +246,30 @@ class ForceFieldManager:
 
         self.logger.info(f"Adding Type-to-Type interaction (force group {force_group}, {num_types} types).")
         self.logger.info(f"Parameters -> mu: {self.mu}, rc: {self.rc},cutoff: {self.Nonbonded_cutoff}")
-
+        type_force.createExclusionsFromBonds([[int(bond[0].id),int(bond[1].id)] for bond in self.topology.bonds()], 1) 
         self.register_force(system, type_force,"TypeToType")
             
         return type_force
 
+    def _get_type_interaction_matrix(self, file_path):
+        """
+        Loads type-to-type interaction matrix from a CSV file.
+
+        Args:
+            file_path (str): Path to the CSV file containing interaction matrix.
+
+        Returns:
+            type_labels (list of str): List of type labels.
+            interaction_matrix (np.ndarray): Interaction matrix (2D array).
+        """
+
+        df = pd.read_csv(file_path)  # Assume first column and row are type labels
+        type_labels = list(df.columns)  # Extract type names from header
+        interaction_matrix = df.values.astype(float)  # Convert DataFrame to NumPy array (float)
+
+        if self.logger:
+            self.logger.info(f"Loaded interaction matrix from {file_path}")
+            self.logger.info(f"Interaction matrix shape: {interaction_matrix.shape}, Type labels: {type_labels}")
+            # self.logger.info(f"")
+
+        return type_labels, interaction_matrix

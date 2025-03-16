@@ -3,7 +3,7 @@ import os
 import openmm.unit as unit
 import numpy as np
 from topology import Topology
-from logger import LoggerManager
+
 class StabilityReporter:
     """
     A custom reporter that checks system stability during simulation runs.
@@ -72,7 +72,7 @@ class StabilityReporter:
         print("[INFO] Velocities reinitialized.")
 
 class StateAnalyzer:
-    def __init__(self, simulation, output_dir="output"):
+    def __init__(self, simulation,output_dir="output"):
         self.simulation = simulation
         self.output_dir = output_dir
         os.makedirs(self.output_dir, exist_ok=True)
@@ -107,8 +107,12 @@ class StateAnalyzer:
             f.write(f"Potential: {pot_energy:.3f} kJ/mol, Kinetic: {kin_energy:.3f} kJ/mol\n")
         print(f"[INFO] Energies logged to {filename}")
 
-
-            
+    def get_energies(self,):
+        state = self.simulation.context.getState(getEnergy=True)
+        pot_energy = state.getPotentialEnergy().value_in_unit(unit.kilojoules_per_mole)
+        kin_energy = state.getKineticEnergy().value_in_unit(unit.kilojoules_per_mole)
+        return {'Ep':pot_energy/self.num_particles, 'Ek': kin_energy/self.num_particles}
+        
     def compute_RG(self):
         """
         Computes the radius of gyration (Rg) of the polymer configuration.
@@ -118,7 +122,7 @@ class StateAnalyzer:
             filename (str): File name to save the Rg value if save_to_file=True.
 
         Returns:
-            float: Radius of gyration in nanometers.
+            float: Radius of gyration .
         """
 
         # Get current positions
@@ -133,12 +137,6 @@ class StateAnalyzer:
 
         # Compute radius of gyration (sqrt of mean squared distance)
         Rg = np.sqrt(np.mean(squared_distances))
-
-        # Prepare output string
-        output_str = f"[INFO] Radius of Gyration (Rg): {Rg:.4f} nm for {self.num_particles} particles."
-
-        # Print to console
-        print(output_str)
 
         return Rg
 

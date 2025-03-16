@@ -1,4 +1,3 @@
-from logger import LoggerManager
 import os
 import h5py
 import time
@@ -11,7 +10,7 @@ from platforms import PlatformManager
 from integrators import IntegratorManager
 from forcefield import ForceFieldManager
 from analyzers import StateAnalyzer, HiCManager
-
+from logger import LogManager
 
 class ChromatinDynamics:
     """
@@ -19,18 +18,22 @@ class ChromatinDynamics:
     - System setup, forces, integrators, analysis, and logging.
     """
 
-    def __init__(self, topology, integrator="langevin", platform_name="CUDA", output_dir="output"):
-        self.logger = LoggerManager().get_logger(__name__)
+    def __init__(self, topology, log_file='ChromatinDynamics.log', integrator="langevin", platform_name="CUDA", output_dir="output"):
         
-        self.logger.info('\n\n'+'*' * 100 + f"\n\n{'Chromatin Dynamics':^{100}}\n\n" + '*' * 100 +'\n')  # Center the title
+        self.logger = LogManager(log_file=os.path.join(output_dir,log_file)).get_logger(__name__)
         
+        self.logger.info('*' * 60)
+        self.logger
+        self.logger.info(f"{'Chromatin Dynamics':^{60}}")
+        self.logger.info('*' * 60)  # Center the title
+        # self.logger.info('\n\n')
         self.system = System()
         self.topology = topology
         self.output_dir = output_dir
         self.num_particles = topology.getNumAtoms()
 
         self.platform_manager = PlatformManager(platform_name, logger=self.logger)
-        self.integrator_manager = IntegratorManager(integrator=integrator, logger=self.logger)
+        self.integrator_manager = IntegratorManager(integrator=integrator, temperature=120.0, logger=self.logger)
         self.force_field_manager = ForceFieldManager(self.topology, logger=self.logger)
 
         self.simulation = None
@@ -44,21 +47,29 @@ class ChromatinDynamics:
         with open(seq_file, "r") as f:
             return [line.split()[1] for line in f if line.strip()]
 
-    def system_setup(self, mode='default', interaction_matrix=None, k_res=1.0, r_rep=0.5, chi=-0.02):
+    def system_setup(self, mode='default', interaction_matrix=None, k_res=1.0, r_rep=1.0, chi=-0.02, cmm_remove=None):
         """Configures system with appropriate force fields based on mode."""
-        self.logger.info("-"*60)
+        # self.logger.info("-"*60)
         self.logger.info(f"Setting up system with mode='{mode}'")
 
         self.logger.info(f"Adding {self.topology.getNumAtoms()} particles ...")
+        self.logger.info("-"*60)
         for _ in range(self.topology.getNumAtoms()):
             self.system.addParticle(1.0)
-        self.force_field_manager.removeCOM(self.system)
+        if cmm_remove: self.force_field_manager.removeCOM(self.system)
 
         if mode == 'default':
             self.force_field_manager.add_harmonic_bonds(self.system)
             type_labels, interaction_matrix = self.force_field_manager._get_type_interaction_matrix('./type_interaction_table.csv')
             self.force_field_manager.add_type_to_type_interaction(self.system, interaction_matrix, type_labels)
-
+        
+        elif mode == 'debug':
+            self.force_field_manager.add_harmonic_trap(self.system, kr=k_res)
+            self.force_field_manager.add_harmonic_bonds(self.system)
+            self.force_field_manager.add_self_avoidance(self.system)
+            type_labels, interaction_matrix = self.force_field_manager._get_type_interaction_matrix('./type_interaction_table.csv')
+            self.force_field_manager.add_type_to_type_interaction(self.system, interaction_matrix, type_labels)
+            
         elif mode == 'harmtrap':
             self.force_field_manager.add_harmonic_bonds(self.system)
             self.force_field_manager.add_harmonic_trap(self.system, kr=k_res)
@@ -71,13 +82,15 @@ class ChromatinDynamics:
         elif mode == "saw":
             self.force_field_manager.add_harmonic_bonds(self.system)
             self.force_field_manager.add_self_avoidance(self.system, r=r_rep)
-        elif mode == "rouse":
+            
+        elif mode == "gauss":
             self.force_field_manager.add_harmonic_bonds(self.system)
-        elif mode == "bad_solvent_collapse":
-            type_labels = ["A", "B"]
-            interaction_matrix = [[chi, 0.0], [0.0, 0.0]]
+            
+        elif mode == "saw_bad_solvent":
             self.force_field_manager.add_harmonic_bonds(self.system)
             self.force_field_manager.add_self_avoidance(self.system, r=r_rep)
+            type_labels = ["A", "B"]
+            interaction_matrix = [[chi, 0.0], [0.0, 0.0]]
             self.force_field_manager.add_type_to_type_interaction(self.system, interaction_matrix, type_labels)
             # self.force_field_manager.add_harmonic_trap(self.system, kr=0.001)
         self.logger.info("System set up complete!")
@@ -105,7 +118,9 @@ class ChromatinDynamics:
     def run(self, n_steps, verbose=True):
         """Runs the simulation and reports performance."""
         if verbose:
+            self.logger.info("-"*60)
             self.logger.info(f"Running simulation for {n_steps} steps...")
+            
 
         start_time = time.time()
         self.simulation.step(n_steps)
@@ -116,6 +131,7 @@ class ChromatinDynamics:
 
         if verbose:
             self.logger.info(f"Completed {n_steps} steps in {elapsed:.2f}s | {steps_per_sec:.0f} steps/s.")
+            self.logger.info("-"*60)
         return steps_per_sec
 
     def check_and_reinitialize_velocities(self, kinetic_threshold=5.0, scale=1.0):
@@ -154,8 +170,9 @@ class ChromatinDynamics:
             force_class = force.__class__.__name__
             force_name = self.force_field_manager.force_name_map.get(i, "Unnamed")
             state = context.getState(getEnergy=True, groups={group})
-            total_energy = state.getPotentialEnergy().value_in_unit(unit.kilojoules_per_mole)
-            per_particle_energy = total_energy / num_particles if num_particles else 0.0
+            pot_energy = state.getPotentialEnergy().value_in_unit(unit.kilojoules_per_mole)
+            kin_energy = state.getKineticEnergy().value_in_unit(unit.kilojoules_per_mole)
+            per_particle_energy = pot_energy / num_particles if num_particles else 0.0
 
             num_particles_force = getattr(force, 'getNumParticles', lambda: 'N/A')()
             num_bonds_force = getattr(force, 'getNumBonds', lambda: 'N/A')()
@@ -166,6 +183,6 @@ class ChromatinDynamics:
             )
 
         self.logger.info("-" * 120)
-        self.logger.info(f"Total number of particles: {num_particles}")
+        self.logger.info(f"Total number of particles: {num_particles} | Kinetic Engery per particle: {kin_energy/self.num_particles}")
         self.logger.info("-" * 120)
-        self.logger.info("=" * 120)
+        

@@ -1,16 +1,7 @@
 from openmm import (LangevinIntegrator,BrownianIntegrator, CustomIntegrator)
-from logger import LoggerManager
+from logger import LogManager
 # -------------------------------------------------------------------
 # Integrator Manager: Creates integrators for Brownian or Langevin dynamics
-# -------------------------------------------------------------------
-# -------------------------------------------------------------------
-# Integrator Manager: Creates and manages OpenMM integrators with validation and logging
-# -------------------------------------------------------------------
-from openmm import LangevinIntegrator, BrownianIntegrator, CustomIntegrator
-from logger import LoggerManager
-
-# -------------------------------------------------------------------
-# Integrator Manager: Creates and manages OpenMM integrators with flexible kwargs
 # -------------------------------------------------------------------
 class IntegratorManager:
     VALID_INTEGRATORS = ["brownian", "langevin", "active"]  # List of supported integrators
@@ -22,7 +13,7 @@ class IntegratorManager:
         "Fact": 0.0  # Placeholder if needed in future
     }
 
-    def __init__(self, integrator="langevin", logger=None, **kwargs):
+    def __init__(self, logger=None, **kwargs):
         """
         Initialize the IntegratorManager with flexible parameters.
 
@@ -31,9 +22,9 @@ class IntegratorManager:
             logger (Logger, optional): Logger instance. If None, initializes a default logger.
             **kwargs: Optional parameters (temperature, friction, timestep, tcorr, Fact).
         """
-        self.logger = logger or LoggerManager().get_logger(__name__)
+        self.logger = logger or LogManager().get_logger(__name__)
         
-        self.logger.info('-'*60)
+        # self.logger.info('-'*60)
         # Load parameters with defaults
         self.temperature = kwargs.get("temperature", self.DEFAULT_PARAMS["temperature"])
         self.friction = kwargs.get("friction", self.DEFAULT_PARAMS["friction"])
@@ -42,7 +33,8 @@ class IntegratorManager:
         self.Fact = kwargs.get("Fact", self.DEFAULT_PARAMS["Fact"])
 
         # Log initialization summary
-        self.logger.info(f"IntegratorManager initialized. Valid integrators {self.VALID_INTEGRATORS}")
+        self.logger.info(f"IntegratorManager initialized")
+        self.logger.info(f"Valid integrators: {self.VALID_INTEGRATORS}")
         self.logger.info('-'*60)
 
     def create_integrator(self, integrator):
@@ -54,18 +46,18 @@ class IntegratorManager:
         """
         try:
             if integrator == "brownian":
-                self.logger.info("Creating BrownianIntegrator...")
-                self.logger.info(f"temperatute={self.temperature} | friction={self.friction} | timestep={self.timestep}")
+                # self.logger.info(f"Creating {integrator} ...")
+                self.logger.info(f"BrownianIntegrator: temperatute={self.temperature} | friction={self.friction} | timestep={self.timestep}")
                 return BrownianIntegrator(self.temperature, self.friction, self.timestep)
 
             elif integrator == "langevin":
-                self.logger.info("Creating LangevinIntegrator...")
-                self.logger.info(f"temperatute={self.temperature} | friction={self.friction} | timestep={self.timestep}")
+                # self.logger.info(f"Creating {integrator} ...")
+                self.logger.info(f"LangevinIntegrator: temperatute={self.temperature} | friction={self.friction} | timestep={self.timestep}")
                 return LangevinIntegrator(self.temperature, self.friction, self.timestep)
 
             elif integrator == "active":
-                self.logger.info(f"temperatute={self.temperature} | friction={self.friction} | timestep={self.timestep} | corr_time={self.tcorr} | active_force={self.Fact}")
-                self.logger.info("Creating ActiveBrownianIntegrator (custom active noise)...")
+                # self.logger.info(f"Creating {integrator} ...")
+                self.logger.info(f"ActiveBrownianIntegrator: temperatute={self.temperature} | friction={self.friction} | timestep={self.timestep} | corr_time={self.tcorr} | active_force={self.Fact}")
                 return ActiveBrownianIntegrator(
                     temperature=self.temperature,
                     collision_rate=self.friction,
