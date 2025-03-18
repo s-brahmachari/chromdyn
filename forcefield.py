@@ -1,4 +1,4 @@
-from openmm import Discrete2DFunction, HarmonicBondForce, CustomNonbondedForce, CustomExternalForce, CMMotionRemover, CustomBondForce
+from openmm import Discrete2DFunction, HarmonicBondForce, CustomNonbondedForce, CustomExternalForce, CMMotionRemover, CustomBondForce, HarmonicAngleForce
 import numpy as np
 import pandas as pd
 from logger import LogManager
@@ -23,15 +23,19 @@ class ForceFieldManager:
         
     def register_force(self, system, force_obj, name):
         """Register force with a human-readable name for later reference."""
+        # print(type(force_obj.__class__.__name__)=="CustomNonbondedForce")
+        if force_obj.__class__.__name__=="CustomNonbondedForce":
+            force_obj.createExclusionsFromBonds([[int(bond[0].id),int(bond[1].id)] for bond in self.topology.bonds()], 1) 
+            self.logger.info("Added exclusions from bonded monomers.")
         force_index = system.addForce(force_obj)
         self.forceDict[name] = force_obj
         self.force_name_map[force_index] = name
         self.logger.info(f"{name} force successfully added to system.")
         self.logger.info('-'*50)
     
-    def add_exceptions_from_bonds(self, force):
+    def add_exclusions_from_bonds(self, force):
         for bond in self.topology.bonds():
-            force.addException(bond[0], bond[1], 0, 0)
+            force.addExclusion(int(bond[0].id), int(bond[1].id))
             
     def removeCOM(self, system, **kwargs):
         """
@@ -94,6 +98,66 @@ class ForceFieldManager:
         # Add the force to the system and record in force dictionary
         self.register_force(system, bond_force,"HarmonicBonds")
         return bond_force
+
+    def add_harmonic_angles(self, system, **kwargs):
+        """
+        Adds harmonic angle forces between triplets of bonded particles.
+        Angle parameters are passed via kwargs and stored in self for later access.
+
+        Args:
+            system (System): OpenMM System object to which the force will be added.
+            kwargs: Optional keyword arguments:
+                - theta0 (float): Equilibrium bond angle in degrees. Default is 120.0.
+                - k (float): Angle force constant (kJ/mol/rad²). Default is 10.0.
+                - forcegroup (int): Force group assignment. Default is 0.
+        """
+        
+        # Extract parameters from kwargs with defaults
+        theta0 = float(kwargs.get('theta0', 180.0))    # Default equilibrium angle in degrees
+        k_angle = float(kwargs.get('k_angle', 2.0))               # Default angle force constant (kJ/mol/rad²)
+        forcegroup = int(kwargs.get('forcegroup', 4))  # Default force group
+        
+        # Convert theta0 to radians (OpenMM expects radians)
+        theta0_rad = theta0 * (np.pi / 180)
+        
+        # Create the HarmonicAngleForce object
+        angle_force = HarmonicAngleForce()
+        angle_force.setForceGroup(forcegroup)
+        
+        # Step 1: Build a bonded neighbor list
+        bonded_neighbors = {atom.index: [] for atom in self.topology.atoms()}
+        
+        for bond in self.topology.bonds():
+            a, b = int(bond[0].id), int(bond[1].id)
+            bonded_neighbors[a].append(b)
+            bonded_neighbors[b].append(a)
+        
+        # Step 2: Find valid angle triplets (i - j - k)
+        num_angles = 0
+        for j, neighbors in bonded_neighbors.items():
+            if len(neighbors) < 2:
+                continue  # Need at least 2 bonded neighbors to form an angle
+            if len(neighbors)>3:
+                self.logger.error("More than two bonded neighbors. Not clear which monomers should be included in angle restraint. It has to be handled properly.")
+                raise ValueError
+            
+            for i in neighbors:
+                for k in neighbors:
+                    if i >= k:
+                        continue  # Avoid duplicate angles
+                    
+                    # Add angle force (i - j - k)
+                    angle_force.addAngle(i, j, k, theta0_rad, k_angle)
+                    num_angles += 1
+        
+        # Log angle force addition
+        self.logger.info(f"Adding {num_angles} harmonic angles with parameters:")
+        self.logger.info(f"θ₀: {theta0}° ({theta0_rad:.4f} rad), k: {k_angle}, force group: {forcegroup}")
+        
+        # Add the force to the system and store in the force dictionary
+        self.register_force(system, angle_force, "HarmonicAngles")
+        
+        return angle_force
 
     def add_harmonic_trap(self, system, **kwargs):
         """
@@ -175,7 +239,7 @@ class ForceFieldManager:
         self.logger.info(f"Adding Self-avoidance force with parameters:")
         self.logger.info(f"Ecut={Ecut}, k_rep={kSA}, r_rep={rSA}, cutoff={self.Nonbonded_cutoff}, group={forcegroup}")
         # self.add_exceptions_from_bonds(avoidance_force)
-        avoidance_force.createExclusionsFromBonds([[int(bond[0].id),int(bond[1].id)] for bond in self.topology.bonds()], 1) 
+        # avoidance_force.createExclusionsFromBonds([[int(bond[0].id),int(bond[1].id)] for bond in self.topology.bonds()], 1) 
         self.register_force(system, avoidance_force, "SelfAvoidance")
         
         return avoidance_force
@@ -246,7 +310,7 @@ class ForceFieldManager:
 
         self.logger.info(f"Adding Type-to-Type interaction (force group {force_group}, {num_types} types).")
         self.logger.info(f"Parameters -> mu: {self.mu}, rc: {self.rc},cutoff: {self.Nonbonded_cutoff}")
-        type_force.createExclusionsFromBonds([[int(bond[0].id),int(bond[1].id)] for bond in self.topology.bonds()], 1) 
+        # type_force.createExclusionsFromBonds([[int(bond[0].id),int(bond[1].id)] for bond in self.topology.bonds()], 1) 
         self.register_force(system, type_force,"TypeToType")
             
         return type_force

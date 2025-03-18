@@ -58,15 +58,17 @@ class Run:
 
         self._log_final_results(results, "Radius of Gyration (Rg) vs Repulsion Distance (r_rep)", Np)
 
-    def SAW_bad_solvent(self, chi=0.0, N=1000):
-
+    def saw_bad_solvent(self, **kwargs):
+        chi = float(kwargs.get('chi', 0.0))
+        N_poly = float(kwargs.get('N', 200.0))
+        
         generator = TopologyGenerator()
-        generator.gen_top([N])
+        generator.gen_top([N_poly])
 
         results = []
 
         self.logger.info("=" * 160)
-        self.logger.info(f"Running simulation in Bad Solvent Condition (Chi = {chi})")
+        self.logger.info(f"Running simulation: SAW in Bad Solvent Condition (chi = {chi})")
         self.logger.info("-" * 80)
         output_dir=f"bad_solvent_chi_{chi}_{N}"
         sim = ChromatinDynamics(generator.topology, integrator='langevin', platform_name="OpenCL", output_dir=output_dir, log_file=output_dir+'/CD.log')

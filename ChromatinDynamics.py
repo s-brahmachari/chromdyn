@@ -47,7 +47,20 @@ class ChromatinDynamics:
         with open(seq_file, "r") as f:
             return [line.split()[1] for line in f if line.strip()]
 
-    def system_setup(self, mode='default', interaction_matrix=None, k_res=1.0, r_rep=1.0, chi=-0.02, cmm_remove=None):
+    def system_setup(self, mode='default', **kwargs):
+        
+        type_table = str(kwargs.get('type_table', None))
+        k_res = float(kwargs.get('k_res', 1.0))            # Default bond spring constant
+        r_rep = float(kwargs.get('r_rep', 1.0))
+        chi = float(kwargs.get('chi', 0.0))
+        cmm_remove = kwargs.get('cmm_remove', None)
+        k_bond = float(kwargs.get('k_bond', 30.0))
+        r_bond = float(kwargs.get('r_bond', 1.0))
+        k_angle = float(kwargs.get('k_angle', 2.0))
+        k_rep = float(kwargs.get('k_rep', 5.0))
+        E_rep = float(kwargs.get('E_rep', 4.0))
+        theta0 = float(kwargs.get('theta0', 180.0))
+        
         """Configures system with appropriate force fields based on mode."""
         # self.logger.info("-"*60)
         self.logger.info(f"Setting up system with mode='{mode}'")
@@ -56,43 +69,57 @@ class ChromatinDynamics:
         self.logger.info("-"*60)
         for _ in range(self.topology.getNumAtoms()):
             self.system.addParticle(1.0)
+            
         if cmm_remove: self.force_field_manager.removeCOM(self.system)
 
         if mode == 'default':
-            self.force_field_manager.add_harmonic_bonds(self.system)
+            self.force_field_manager.add_harmonic_bonds(self.system, k=k_bond, r0=r_bond)
             type_labels, interaction_matrix = self.force_field_manager._get_type_interaction_matrix('./type_interaction_table.csv')
             self.force_field_manager.add_type_to_type_interaction(self.system, interaction_matrix, type_labels)
         
         elif mode == 'debug':
             self.force_field_manager.add_harmonic_trap(self.system, kr=k_res)
-            self.force_field_manager.add_harmonic_bonds(self.system)
-            self.force_field_manager.add_self_avoidance(self.system)
+            self.force_field_manager.add_harmonic_bonds(self.system, k=k_bond, r0=r_bond)
+            self.force_field_manager.add_self_avoidance(self.system, Ecut=E_rep, k=k_rep, r=r_rep)
             type_labels, interaction_matrix = self.force_field_manager._get_type_interaction_matrix('./type_interaction_table.csv')
             self.force_field_manager.add_type_to_type_interaction(self.system, interaction_matrix, type_labels)
             
         elif mode == 'harmtrap':
-            self.force_field_manager.add_harmonic_bonds(self.system)
+            self.force_field_manager.add_harmonic_bonds(self.system, k=k_bond, r0=r_bond)
             self.force_field_manager.add_harmonic_trap(self.system, kr=k_res)
 
         elif mode == "harmtrap_with_self_avoidance":
-            self.force_field_manager.add_harmonic_bonds(self.system)
+            self.force_field_manager.add_harmonic_bonds(self.system, k=k_bond, r0=r_bond)
             self.force_field_manager.add_harmonic_trap(self.system, kr=k_res)
-            self.force_field_manager.add_self_avoidance(self.system, r=r_rep)
+            self.force_field_manager.add_self_avoidance(self.system, Ecut=E_rep, k=k_rep, r=r_rep)
         
         elif mode == "saw":
-            self.force_field_manager.add_harmonic_bonds(self.system)
-            self.force_field_manager.add_self_avoidance(self.system, r=r_rep)
+            self.force_field_manager.add_harmonic_bonds(self.system, k=k_bond, r0=r_bond)
+            self.force_field_manager.add_self_avoidance(self.system, Ecut=E_rep, k=k_rep, r=r_rep)
             
-        elif mode == "gauss":
-            self.force_field_manager.add_harmonic_bonds(self.system)
+        elif mode=="saw_stiff_backbone":
+            self.force_field_manager.add_harmonic_bonds(self.system, k=k_bond, r0=r_bond)
+            self.force_field_manager.add_self_avoidance(self.system, Ecut=E_rep, k=k_rep, r=r_rep)
+            self.force_field_manager.add_harmonic_angles(self.system, theta0=theta0, k_angle=k_angle)
             
-        elif mode == "saw_bad_solvent":
-            self.force_field_manager.add_harmonic_bonds(self.system)
-            self.force_field_manager.add_self_avoidance(self.system, r=r_rep)
+        elif mode=="saw_stiff_backbone_bad_solvent":
+            self.force_field_manager.add_harmonic_bonds(self.system, k=k_bond, r0=r_bond)
+            self.force_field_manager.add_self_avoidance(self.system, Ecut=E_rep, k=k_rep, r=r_rep)
+            self.force_field_manager.add_harmonic_angles(self.system, theta0=theta0, k_angle=k_angle)
             type_labels = ["A", "B"]
             interaction_matrix = [[chi, 0.0], [0.0, 0.0]]
             self.force_field_manager.add_type_to_type_interaction(self.system, interaction_matrix, type_labels)
-            # self.force_field_manager.add_harmonic_trap(self.system, kr=0.001)
+            
+        elif mode == "gauss":
+            self.force_field_manager.add_harmonic_bonds(self.system, k=k_bond, r0=r_bond)
+            
+        elif mode == "saw_bad_solvent":
+            self.force_field_manager.add_harmonic_bonds(self.system, k=k_bond, r0=r_bond)
+            self.force_field_manager.add_self_avoidance(self.system, Ecut=E_rep, k=k_rep, r=r_rep)
+            type_labels = ["A", "B"]
+            interaction_matrix = [[chi, 0.0], [0.0, 0.0]]
+            self.force_field_manager.add_type_to_type_interaction(self.system, interaction_matrix, type_labels)
+            
         self.logger.info("System set up complete!")
         self.logger.info("-"*60)
 

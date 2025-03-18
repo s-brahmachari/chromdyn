@@ -29,11 +29,14 @@ class LogManager:
         """
         logger = logging.getLogger(name)
         logger.setLevel(self.log_level)
-
+        
+        while logger.hasHandlers():
+            logger.handlers.clear()
+            
         # Avoid adding multiple handlers if logger already has handlers
         if not logger.handlers:
             formatter = logging.Formatter(self.log_format)
-
+        
             # Console handler
             console_handler = logging.StreamHandler()
             console_handler.setLevel(logging.INFO)
