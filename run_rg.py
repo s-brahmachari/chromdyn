@@ -45,7 +45,7 @@ for replica in range(Nrep):
     sim = ChromatinDynamics(generator.topology, integrator='langevin', platform_name="OpenCL", output_dir=f"{output}", log_file=f"chrom_dynamics_{replica}.log")
     sim.system_setup(mode=mode, k_bond=k_bond, r_bond=r_bond, chi=chi, k_angle=k_angle, theta0=theta0, E_rep=E_rep, r_rep=r_rep, k_rep=k_rep,)
     sim.simulation_setup()
-    sim.run(100000) #relax
+    sim.run(100_000) #relax
     for _ in range(num_blocks):
         sim.run(2000)
         sim.print_force_info()

@@ -39,8 +39,6 @@ class ChromatinDynamics:
         self.simulation = None
         self.analyzer = None
 
-        
-
     def read_sequence(self, seq_file):
         """Reads sequence file and returns list of types."""
         self.logger.info(f"Reading sequence from file: {seq_file}")
@@ -122,7 +120,15 @@ class ChromatinDynamics:
             
         self.logger.info("System set up complete!")
         self.logger.info("-"*60)
-
+    
+    def get_pos_3Drandom_walk(self, num_steps, step_size):
+        # Generate random directions on the unit sphere
+        directions = np.random.normal(size=(num_steps, 3))
+        directions /= np.linalg.norm(directions, axis=1)[:, np.newaxis]  # Normalize
+        steps = directions * step_size  # Scale to step size
+        positions = np.cumsum(steps, axis=0)  # Cumulative sum for path
+        return positions  # Shape: (num_steps, 3)
+    
     def simulation_setup(self):
         """Sets up the integrator, platform, context, and analyzer."""
         integrator = self.integrator_manager.create_integrator('langevin')
@@ -132,7 +138,8 @@ class ChromatinDynamics:
         self.analyzer = StateAnalyzer(self.simulation, output_dir=self.output_dir)
         self.logger.info("Setting up context...")
         self.logger.info("Random position initialization in context")
-        positions = np.random.random((self.num_particles, 3))
+        # positions = np.random.random((self.num_particles, 3))
+        positions = self.get_pos_3Drandom_walk(self.num_particles, 1.0)
         self.simulation.context.setPositions(positions)
         
         self.logger.info(f"Simulation set up complete!")
@@ -141,7 +148,7 @@ class ChromatinDynamics:
             StateDataReporter(os.path.join(self.output_dir, "energy_report.txt"), 1000,
                               step=True, potentialEnergy=True, kineticEnergy=True, totalEnergy=True, temperature=True)
         )
-
+    
     def run(self, n_steps, verbose=True):
         """Runs the simulation and reports performance."""
         if verbose:
