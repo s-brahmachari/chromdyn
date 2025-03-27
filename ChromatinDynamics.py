@@ -157,7 +157,7 @@ class ChromatinDynamics:
         steps_per_sec = n_steps / elapsed
 
         if verbose:
-            self.logger.info(f"Completed {n_steps} steps in {elapsed:.2f}s | {steps_per_sec:.0f} steps/s.")
+            self.logger.info(f"Completed {n_steps} steps in {elapsed:.2f}s ({steps_per_sec:.0f} steps/s) | Radius of gyration: {self.analyzer.compute_RG():.2f}")
             self.logger.info("-"*60)
         return steps_per_sec
 
@@ -188,8 +188,8 @@ class ChromatinDynamics:
         num_particles = system.getNumParticles()
 
         self.logger.info("-" * 120)
-        self.logger.info(f"{'Index':<6} {'Force Class':<30} {'Force Name':<25} {'Group':<8} "
-                         f"{'Particles':<12} {'Bonds':<12} {'Energy/Particle':<20}")
+        self.logger.info(f"{'Index':<6} {'Force Class':<30} {'Force Name':<20} {'Group':<8} "
+                         f"{'Particles':<12} {'Bonds':<12} {'Exclusions':<12} {'Energy/Particle':<20}")
         self.logger.info("-" * 120)
 
         for i, force in enumerate(system.getForces()):
@@ -203,13 +203,14 @@ class ChromatinDynamics:
 
             num_particles_force = getattr(force, 'getNumParticles', lambda: 'N/A')()
             num_bonds_force = getattr(force, 'getNumBonds', lambda: 'N/A')()
+            num_exclusions = getattr(force, 'getNumExclusions', lambda: 'N/A')()
 
             self.logger.info(
-                f"{i:<6} {force_class:<30} {force_name:<25} {group:<8} "
-                f"{num_particles_force:<12} {num_bonds_force:<12} {per_particle_energy:<30.5f}"
+                f"{i:<6} {force_class:<30} {force_name:<20} {group:<8} "
+                f"{num_particles_force:<12} {num_bonds_force:<12} {num_exclusions:<12} {per_particle_energy:<20.3f}"
             )
 
         self.logger.info("-" * 120)
-        self.logger.info(f"Total number of particles: {num_particles} | Kinetic Engery per particle: {kin_energy/self.num_particles}")
+        self.logger.info(f"Total number of particles: {num_particles} | Kinetic Energy per particle: {kin_energy/self.num_particles:.3f}")
         self.logger.info("-" * 120)
         

@@ -1,0 +1,123 @@
+#!/bin/bash -l
+
+counter=0
+counter2=0
+out_str=""
+code_home=/home/sb95/ChromatinDynamics
+
+# for mode in gauss saw saw_stiff_backbone saw_bad_solvent saw_stiff_backbone_bad_solvent; do
+for mode in gauss; do
+
+data_home=/work/cms16/sb95/Finzi_collab/$mode
+
+mkdir -p -v $data_home
+
+cp -r $code_home $data_home
+cp $code_home/run_rg.py $data_home
+cd $data_home
+mkdir input
+for N in 100 200 500 800 1000 2000 5000 10000; do
+for kbond in 10.0 30.0 100.0; do
+for ka in 0.0; do # 2.0 5.0; do
+for chi in 0.0; do # -0.02 -0.05 -0.1 -0.15; do
+for ecut in 0.0; do
+for rrep in 1.0; do
+
+savefolder=output_N${N}_kbond${kbond}_ka${ka}_chi${chi}_ecut${ecut}_rrep${rrep}
+mkdir -p -v $savefolder
+
+if [[ -z "$out_str" ]]; then
+    out_str=$"python run_rg.py -mode ${mode} -N ${N} -kbond ${kbond} -kangle ${ka} -Erep ${ecut} -rrep ${rrep} -chi ${chi} -output ${savefolder} -Nrep 10 > ${savefolder}/output.log"
+else
+    out_str+=$'\n'"python run_rg.py -mode ${mode} -N ${N} -kbond ${kbond} -kangle ${ka} -Erep ${ecut} -rrep ${rrep} -chi ${chi} -output ${savefolder} -Nrep 10 > ${savefolder}/output.log"
+fi
+# out_str+=$'\n'"python run_rg.py ${ka} ${chi} ${ecut} ${savefolder} > ${savefolder}/output.log"
+
+((counter++))
+((counter2++))
+
+if (( counter == 16 )); then
+# echo "$out_str"
+sbatch_file="#!/bin/bash -l
+
+#SBATCH --job-name=$N-1
+#SBATCH --account=commons
+#SBATCH --partition=commons
+#SBATCH --nodes=1            # this can be more, up to 22 on aries
+#SBATCH --ntasks-per-node=8
+#SBATCH --cpus-per-task=12
+#SBATCH --threads-per-core=1
+#SBATCH --mem-per-cpu=8G
+#SBATCH --gres=gpu:8
+#SBATCH --time=6:00:00
+#SBATCH --export=ALL
+
+module purge
+module load foss/2020b Launcher_GPU OpenMPI 
+source \$HOME/anaconda3/bin/activate
+conda activate openmm
+
+# Controlling Launcher and showing some job info
+export LAUNCHER_WORKDIR=\`pwd\`
+export LAUNCHER_JOB_FILE=\$PWD/launcher_jobs_sim$counter2
+export LAUNCHER_BIND=1
+
+# Each iteration is an inversion
+# rm \${LAUNCHER_WORKDIR}/launcher_jobs_sim &> /dev/null
+date
+echo \"${out_str}\" >> \${LAUNCHER_WORKDIR}/launcher_jobs_sim$counter2
+
+\$LAUNCHER_DIR/paramrun
+
+wait
+date"
+echo "$sbatch_file">>submit_sim_$counter2.slurm
+sbatch submit_sim_$counter2.slurm
+echo "--------------------------------------"
+counter=0
+out_str=""
+fi
+done
+done
+done
+done
+done
+done
+done
+# Print remaining commands if any
+if [[ -n "$out_str" ]]; then
+echo "$out_str"
+sbatch_file="#!/bin/bash -l
+
+#SBATCH --job-name=$N
+#SBATCH --account=commons
+#SBATCH --partition=commons
+#SBATCH --nodes=1            # this can be more, up to 22 on aries
+#SBATCH --ntasks-per-node=8
+#SBATCH --cpus-per-task=12
+#SBATCH --threads-per-core=1
+#SBATCH --mem-per-cpu=8G
+#SBATCH --gres=gpu:8
+#SBATCH --time=6:00:00
+#SBATCH --export=ALL
+
+module purge
+module load foss/2020b Launcher_GPU OpenMPI 
+source \$HOME/anaconda3/bin/activate
+conda activate openmm
+
+# Controlling Launcher and showing some job info
+export LAUNCHER_WORKDIR=\`pwd\`
+export LAUNCHER_JOB_FILE=\$PWD/launcher_jobs_sim
+export LAUNCHER_BIND=1
+
+# Each iteration is an inversion
+rm \${LAUNCHER_WORKDIR}/launcher_jobs_sim &> /dev/null
+date
+echo \"${out_str}\" >> \${LAUNCHER_WORKDIR}/launcher_jobs_sim
+\$LAUNCHER_DIR/paramrun
+wait
+date"
+echo "$sbatch_file">>submit_sim_$counter2.slurm
+sbatch submit_sim_$counter2.slurm
+fi

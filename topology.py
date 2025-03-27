@@ -48,12 +48,12 @@ class TopologyGenerator:
         atom_count = sum(1 for _ in self.topology.atoms())  # Count total atoms
         
         print(f"{atom_count}\n")  # Write total number of atoms as the first line
-        print(f"{'Atom':<20} {'Residue':<10} {'Chain':<10}\n")  # Header
+        print(f"{'Index':<20} {'Atom':<20} {'Element':<10} {'Residue':<10} {'Chain':<10}\n")  # Header
         ii=1
         for chain in self.topology.chains():
             for residue in chain.residues():
                 for atom in residue.atoms():
-                    print(f"{ii:<5} {atom.name:<20} {residue.name:<10} {chain.id:<10}\n")
+                    print(f"{ii:<20} {atom.name:<20} {atom.element:<10} {residue.name:<10} {chain.id:<10}\n")
                     ii+=1
                         
     def save_top(self, filename="topology_info.txt"):

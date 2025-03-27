@@ -277,7 +277,7 @@ class ForceFieldManager:
 
         unused_types = [t for t in type_labels if t not in used_types]
         if unused_types and verbose:
-            self.logger.debug(f"Types defined in interaction matrix but not used in topology: {unused_types}")
+            self.logger.warn(f"Types defined in interaction matrix but not used in topology: {unused_types}")
 
         # ---- Map types and subset interaction matrix ---- #
         type_to_idx = {label: idx for idx, label in enumerate(type_labels)}
