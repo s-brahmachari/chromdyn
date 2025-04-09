@@ -15,18 +15,22 @@ parser.add_argument('-rbond',default=1.0,dest='rbond', type=float)
 parser.add_argument('-kangle',default=2.0,dest='kangle', type=float)
 parser.add_argument('-theta0',default=180.0,dest='theta0', type=float)
 parser.add_argument('-krep',default=5.0,dest='krep', type=float)
+parser.add_argument('-kres',default=0.01,dest='kres', type=float)
 parser.add_argument('-Erep',default=4.0,dest='Erep', type=float)
 parser.add_argument('-rrep',default=1.0,dest='rrep', type=float)
 parser.add_argument('-chi',default=0.0,dest='chi', type=float)
+parser.add_argument('-rc',default=1.5,dest='rc', type=float)
 parser.add_argument('-Nrep',default=1,dest='Nrep', type=int)
 parser.add_argument('-output',default='./',dest='output', type=str)
 
 args=parser.parse_args()
 
 k_bond = float(args.kbond)
+k_res = float(args.kres)
 N_poly = int(args.N_poly)
 mode = str(args.mode)
 chi = float(args.chi)
+rc = float(args.rc)
 r_bond = float(args.rbond)
 k_angle =float(args.kangle)
 theta0 = float(args.theta0)
@@ -43,11 +47,12 @@ num_blocks = 100
 
 for replica in range(Nrep):
     sim = ChromatinDynamics(generator.topology, integrator='langevin', platform_name="OpenCL", output_dir=f"{output}", log_file=f"chrom_dynamics_{replica}.log")
-    sim.system_setup(mode=mode, k_bond=k_bond, r_bond=r_bond, chi=chi, k_angle=k_angle, theta0=theta0, E_rep=E_rep, r_rep=r_rep, k_rep=k_rep,)
+    sim.system_setup(mode=mode, k_bond=k_bond, r_bond=r_bond, chi=chi, k_angle=k_angle, theta0=theta0, E_rep=E_rep, r_rep=r_rep, k_rep=k_rep, k_res=k_res, rc=rc)
     sim.simulation_setup()
     sim.run(100_000) #relax
     for _ in range(num_blocks):
         sim.run(2000)
         sim.print_force_info()
         Rg.append(sim.analyzer.compute_RG())
+        
 np.savetxt(os.path.join(output,"Radius_of_gyration.txt"), Rg)

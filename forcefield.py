@@ -23,10 +23,9 @@ class ForceFieldManager:
         
     def register_force(self, system, force_obj, name):
         """Register force with a human-readable name for later reference."""
-        # print(type(force_obj.__class__.__name__)=="CustomNonbondedForce")
-        if force_obj.__class__.__name__=="CustomNonbondedForce":
-            force_obj.createExclusionsFromBonds([[int(bond[0].id),int(bond[1].id)] for bond in self.topology.bonds()], 1) 
-            self.logger.info("Added exclusions from bonded monomers.")
+        # if force_obj.__class__.__name__=="CustomNonbondedForce":
+        #     force_obj.createExclusionsFromBonds([[int(bond[0].id),int(bond[1].id)] for bond in self.topology.bonds()], 1) 
+        #     self.logger.info("Added exclusions from bonded monomers.")
         force_index = system.addForce(force_obj)
         self.forceDict[name] = force_obj
         self.force_name_map[force_index] = name
@@ -158,7 +157,41 @@ class ForceFieldManager:
         self.register_force(system, angle_force, "HarmonicAngles")
         
         return angle_force
+    
+    def add_fene_bonds(self, system, **kwargs):
+        """
+        Adds FENE (Finite Extensible Nonlinear Elastic) bonds to an OpenMM system.
 
+        Args:
+            system (System): OpenMM System object to which the FENE bonds will be added.
+            bond_list (list of tuple): List of (atom1, atom2) index pairs to bond.
+            kwargs:
+                - k (float): Spring constant (default 30.0).
+                - R0 (float): Maximum extension (default 1.5).
+                - forcegroup (int): Force group for the FENE bonds (default 2).
+        """
+        k = float(kwargs.get('k', 30.0))             # FENE spring constant
+        R0 = float(kwargs.get('R0', 1.5))            # Maximum extension
+        forcegroup = int(kwargs.get('forcegroup', 0))
+
+        self.logger.info(f"Adding FENE bonds with k={k}, R0={R0}, force group={forcegroup}")
+
+        # FENE bond potential (no units here; handled by OpenMM engine)
+        fene_force = CustomBondForce(
+            "-0.5 * k_fene * R0_fene^2 * log(1 - (r/R0_fene)^2)"
+        )
+        fene_force.addGlobalParameter("k_fene", k)
+        fene_force.addGlobalParameter("R0_fene", R0)
+
+        # Add all FENE bonds
+        for i, bond in enumerate(self.topology.bonds()):
+            fene_force.addBond(int(bond[0].id), int(bond[1].id), ())
+        
+        fene_force.setForceGroup(forcegroup)
+        self.register_force(system, fene_force, "FENEBonds")
+
+        return fene_force
+    
     def add_harmonic_trap(self, system, **kwargs):
         """
         Adds a harmonic trap (restraint) to the system to confine particles within a spherical region.
@@ -243,6 +276,45 @@ class ForceFieldManager:
         self.register_force(system, avoidance_force, "SelfAvoidance")
         
         return avoidance_force
+    
+    def add_LJ_repulsion(self, system, **kwargs):
+        """
+        Adds hard-core self-avoidance with flexible parameters passed via kwargs.
+        
+        Args:
+            system (System): OpenMM system.
+            verbose (bool): Print setup info.
+            **kwargs: Flexible parameters like Ecut, kSA, rSA, forcegroup.
+                    Example: {'Ecut': 4.0, 'kSA': 5.0, 'rSA': 1.0, 'forcegroup': 2}
+        """
+
+        # Extract parameters with defaults using kwargs.get
+        sigma = kwargs.get('sigma', 1.0)
+        forcegroup = kwargs.get('forcegroup', 6)
+
+        # Define force
+        repul_energy = "(sigma / r) ^ 12"
+        hard_repel_force = CustomNonbondedForce(repul_energy)
+        hard_repel_force.setForceGroup(forcegroup)
+        hard_repel_force.setCutoffDistance(self.Nonbonded_cutoff)
+        hard_repel_force.setNonbondedMethod(self.Nonbonded_method)
+
+        # Add global parameters
+        hard_repel_force.addGlobalParameter('sigma', sigma)
+        
+        # Add particles
+        num_particles = getattr(self, 'num_particles', system.getNumParticles())
+        for _ in range(num_particles):
+            hard_repel_force.addParticle(())
+        # self.logger.info('-'*50)
+        self.logger.info(f"Adding Hard-core repulsion force with parameters:")
+        self.logger.info(f"sigma={sigma}, cutoff={self.Nonbonded_cutoff}, group={forcegroup}")
+        # self.add_exceptions_from_bonds(avoidance_force)
+        # avoidance_force.createExclusionsFromBonds([[int(bond[0].id),int(bond[1].id)] for bond in self.topology.bonds()], 1) 
+        self.register_force(system, hard_repel_force, "HardCoreLJ")
+        
+        return hard_repel_force
+    
     
     def add_type_to_type_interaction(self, system, interaction_matrix, type_labels, verbose=True, **kwargs):
         """

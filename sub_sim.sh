@@ -4,11 +4,11 @@ counter=0
 counter2=0
 out_str=""
 code_home=/home/sb95/ChromatinDynamics
-
+nrep=10
 # for mode in gauss saw saw_stiff_backbone saw_bad_solvent saw_stiff_backbone_bad_solvent; do
-for mode in gauss; do
+for mode in saw_stiff_backbone_bad_solvent; do
 
-data_home=/work/cms16/sb95/Finzi_collab_2/$mode
+data_home=/work/cms16/sb95/Finzi_collab_bad_solvent_2/$mode
 
 mkdir -p -v $data_home
 
@@ -16,20 +16,23 @@ cp -r $code_home $data_home
 cp $code_home/run_rg.py $data_home
 cd $data_home
 mkdir input
-for N in 100 500 1000 2000 5000 10000; do
-for kbond in 1.0; do
-for ka in 0.0; do # 2.0 5.0; do
-for chi in 0.0; do #-0.05 -0.1 -0.2 -0.3; do
-for ecut in 0.0; do
-for rrep in 1.0; do
+# for N in 100 200 500 800 1000 2000 5000 10000; do
+for N in 500 1000; do
+for kbond in 30.0; do
+for kres in 0.0; do
+for ka in 10.0; do # 2.0 5.0; do
+for chi in -0.05 -0.1 -0.15 -0.2 -0.25 -0.3 -0.35 -0.4 -0.45 -0.5 -0.55 -0.6 -0.65 -0.7; do
+for ecut in 8.0; do
+for rrep in 0.7; do
+for rc in 1.75; do
 
-savefolder=output_N${N}_kbond${kbond}_ka${ka}_chi${chi}_ecut${ecut}_rrep${rrep}
+savefolder=output_N${N}_kbond${kbond}_ka${ka}_chi${chi}_ecut${ecut}_rrep${rrep}_kres${kres}_rc${rc}
 mkdir -p -v $savefolder
 
 if [[ -z "$out_str" ]]; then
-    out_str=$"python run_rg.py -mode ${mode} -N ${N} -kbond ${kbond} -kangle ${ka} -Erep ${ecut} -rrep ${rrep} -chi ${chi} -output ${savefolder} -Nrep 8 > ${savefolder}/output.log"
+    out_str=$"python run_rg.py -mode ${mode} -N ${N} -kbond ${kbond} -kangle ${ka} -Erep ${ecut} -rrep ${rrep} -chi ${chi} -rc ${rc} -kres ${kres} -output ${savefolder} -Nrep $nrep > ${savefolder}/output.log"
 else
-    out_str+=$'\n'"python run_rg.py -mode ${mode} -N ${N} -kbond ${kbond} -kangle ${ka} -Erep ${ecut} -rrep ${rrep} -chi ${chi} -output ${savefolder} -Nrep 8 > ${savefolder}/output.log"
+    out_str+=$'\n'"python run_rg.py -mode ${mode} -N ${N} -kbond ${kbond} -kangle ${ka} -Erep ${ecut} -rrep ${rrep} -chi ${chi} -rc ${rc} -kres ${kres} -output ${savefolder} -Nrep $nrep > ${savefolder}/output.log"
 fi
 # out_str+=$'\n'"python run_rg.py ${ka} ${chi} ${ecut} ${savefolder} > ${savefolder}/output.log"
 
@@ -77,6 +80,8 @@ echo "--------------------------------------"
 counter=0
 out_str=""
 fi
+done
+done
 done
 done
 done

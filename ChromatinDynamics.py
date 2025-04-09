@@ -1,6 +1,7 @@
 import os
 import h5py
 import time
+import random
 import numpy as np
 from openmm import System
 from openmm.app import Simulation, StateDataReporter
@@ -58,6 +59,7 @@ class ChromatinDynamics:
         k_rep = float(kwargs.get('k_rep', 5.0))
         E_rep = float(kwargs.get('E_rep', 4.0))
         theta0 = float(kwargs.get('theta0', 180.0))
+        rc = float(kwargs.get('rc', 1.5))
         
         """Configures system with appropriate force fields based on mode."""
         # self.logger.info("-"*60)
@@ -82,11 +84,11 @@ class ChromatinDynamics:
             type_labels, interaction_matrix = self.force_field_manager._get_type_interaction_matrix('./type_interaction_table.csv')
             self.force_field_manager.add_type_to_type_interaction(self.system, interaction_matrix, type_labels)
             
-        elif mode == 'harmtrap':
+        elif mode == 'harmtrap_gauss':
             self.force_field_manager.add_harmonic_bonds(self.system, k=k_bond, r0=r_bond)
             self.force_field_manager.add_harmonic_trap(self.system, kr=k_res)
 
-        elif mode == "harmtrap_with_self_avoidance":
+        elif mode == "harmtrap_saw":
             self.force_field_manager.add_harmonic_bonds(self.system, k=k_bond, r0=r_bond)
             self.force_field_manager.add_harmonic_trap(self.system, kr=k_res)
             self.force_field_manager.add_self_avoidance(self.system, Ecut=E_rep, k=k_rep, r=r_rep)
@@ -94,6 +96,14 @@ class ChromatinDynamics:
         elif mode == "saw":
             self.force_field_manager.add_harmonic_bonds(self.system, k=k_bond, r0=r_bond)
             self.force_field_manager.add_self_avoidance(self.system, Ecut=E_rep, k=k_rep, r=r_rep)
+        
+        elif mode == "saw_LJ":
+            self.force_field_manager.add_harmonic_bonds(self.system, k=k_bond, r0=r_bond)
+            self.force_field_manager.add_LJ_repulsion(self.system, sigma=r_rep)
+        
+        elif mode == "saw_LJ_fene":
+            self.force_field_manager.add_fene_bonds(self.system, k=k_bond)
+            self.force_field_manager.add_LJ_repulsion(self.system, sigma=r_rep)
             
         elif mode=="saw_stiff_backbone":
             self.force_field_manager.add_harmonic_bonds(self.system, k=k_bond, r0=r_bond)
@@ -106,20 +116,110 @@ class ChromatinDynamics:
             self.force_field_manager.add_harmonic_angles(self.system, theta0=theta0, k_angle=k_angle)
             type_labels = ["A", "B"]
             interaction_matrix = [[chi, 0.0], [0.0, 0.0]]
-            self.force_field_manager.add_type_to_type_interaction(self.system, interaction_matrix, type_labels)
+            self.force_field_manager.add_type_to_type_interaction(self.system, interaction_matrix, type_labels, rc=rc)
             
         elif mode == "gauss":
             self.force_field_manager.add_harmonic_bonds(self.system, k=k_bond, r0=r_bond)
+        
+        elif mode == "fene":
+            self.force_field_manager.add_fene_bonds(self.system, k=k_bond)
             
         elif mode == "saw_bad_solvent":
             self.force_field_manager.add_harmonic_bonds(self.system, k=k_bond, r0=r_bond)
             self.force_field_manager.add_self_avoidance(self.system, Ecut=E_rep, k=k_rep, r=r_rep)
             type_labels = ["A", "B"]
             interaction_matrix = [[chi, 0.0], [0.0, 0.0]]
-            self.force_field_manager.add_type_to_type_interaction(self.system, interaction_matrix, type_labels)
+            self.force_field_manager.add_type_to_type_interaction(self.system, interaction_matrix, type_labels, rc=rc)
+        
+        elif mode == "saw_LJ_bad_solvent":
+            self.force_field_manager.add_harmonic_bonds(self.system, k=k_bond, r0=r_bond)
+            self.force_field_manager.add_LJ_repulsion(self.system, sigma=r_rep)
+            type_labels = ["A", "B"]
+            interaction_matrix = [[chi, 0.0], [0.0, 0.0]]
+            self.force_field_manager.add_type_to_type_interaction(self.system, interaction_matrix, type_labels, rc=rc)
             
         self.logger.info("System set up complete!")
         self.logger.info("-"*60)
+    
+    def get_pos_3Dsaw(self, num_steps, step_size=1, max_restarts=1000, verbose=True):
+        """
+        Generate a 3D self-avoiding walk on a cubic lattice with restarts.
+        
+        Args:
+            num_steps (int): Desired length of the walk.
+            max_restarts (int): Maximum number of full retries if stuck.
+            verbose (bool): Print progress info.
+
+        Returns:
+            path (np.ndarray): Array of shape (num_steps, 3) with 3D walk positions.
+        """
+        directions = [
+            np.array([step_size, 0, 0]), np.array([-step_size, 0, 0]),
+            np.array([0, step_size, 0]), np.array([0, -step_size, 0]),
+            np.array([0, 0, step_size]), np.array([0, 0, -step_size]),
+        ]
+
+        for attempt in range(1, max_restarts + 1):
+            position = np.array([0, 0, 0])
+            visited = set()
+            visited.add(tuple(position))
+            path = [position.copy()]
+            success = True
+
+            for step in range(1, num_steps):
+                # List all valid next positions
+                valid_moves = []
+                for d in directions:
+                    candidate = tuple(position + d)
+                    if candidate not in visited:
+                        valid_moves.append(d)
+
+                if not valid_moves:
+                    success = False
+                    if verbose:
+                        self.logger.info(f"[Attempt {attempt}] Stuck at step {step}, restarting...")
+                    break  # restart the whole walk
+
+                move = random.choice(valid_moves)
+                position += move
+                visited.add(tuple(position))
+                path.append(position.copy())
+
+            if success:
+                if verbose:
+                    path = np.array(path)
+                    self.logger.info(f"Walk completed after {attempt} attempt(s). Position shape: {path.shape}")
+                return path
+
+        raise RuntimeError(f"Failed to generate a self-avoiding walk after {max_restarts} restarts.")
+        
+    # def get_pos_3Dsaw(self, num_steps, step_size, max_retries=1000):
+    #     """
+    #     Generate a 3D self-avoiding walk of given step size.
+    #     Ensures that no two positions are closer than `step_size`.
+    #     """
+    #     positions = [np.zeros(3)]  # start at origin
+
+    #     for step in range(1, num_steps):
+    #         success = False
+    #         for _ in range(max_retries):
+    #             # Propose a random direction
+    #             direction = np.random.normal(size=3)
+    #             direction /= np.linalg.norm(direction)
+    #             candidate = positions[-1] + step_size * direction
+
+    #             # Check distance to all previous positions
+    #             dists = np.linalg.norm(np.array(positions) - candidate, axis=1)
+    #             if np.all(dists >= step_size):
+    #                 positions.append(candidate)
+    #                 success = True
+    #                 break
+
+    #         if not success:
+    #             print(f"Step {step}: Stuck after {max_retries} attempts. Ending walk.")
+    #             break  # Exit early if stuck
+
+    #     return np.array(positions)
     
     def get_pos_3Drandom_walk(self, num_steps, step_size):
         # Generate random directions on the unit sphere
@@ -139,11 +239,11 @@ class ChromatinDynamics:
         self.logger.info("Setting up context...")
         self.logger.info("Random position initialization in context")
         # positions = np.random.random((self.num_particles, 3))
-        positions = self.get_pos_3Drandom_walk(self.num_particles, 1.0)
+        positions = self.get_pos_3Dsaw(self.num_particles)
         self.simulation.context.setPositions(positions)
-        
         self.logger.info(f"Simulation set up complete!")
         self.logger.info("-"*60)
+        self.print_force_info()
         self.simulation.reporters.append(
             StateDataReporter(os.path.join(self.output_dir, "energy_report.txt"), 1000,
                               step=True, potentialEnergy=True, kineticEnergy=True, totalEnergy=True, temperature=True)
