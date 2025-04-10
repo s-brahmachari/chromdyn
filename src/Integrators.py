@@ -1,10 +1,10 @@
 from openmm import (LangevinIntegrator,BrownianIntegrator, CustomIntegrator)
-from logger import LogManager
+from Logger import LogManager
 # -------------------------------------------------------------------
 # Integrator Manager: Creates integrators for Brownian or Langevin dynamics
 # -------------------------------------------------------------------
 class IntegratorManager:
-    VALID_INTEGRATORS = ["brownian", "langevin", "active"]  # List of supported integrators
+    VALID_INTEGRATORS = ["langevin", "brownian", "active-brownian"]  # List of supported integrators
     DEFAULT_PARAMS = {
         "temperature": 300.0,
         "friction": 0.1,
@@ -23,7 +23,7 @@ class IntegratorManager:
             **kwargs: Optional parameters (temperature, friction, timestep, tcorr, Fact).
         """
         self.logger = logger or LogManager().get_logger(__name__)
-        
+        self.integrator_name = kwargs.get('integrator', 'langevin')
         # self.logger.info('-'*60)
         # Load parameters with defaults
         self.temperature = kwargs.get("temperature", self.DEFAULT_PARAMS["temperature"])
@@ -33,9 +33,9 @@ class IntegratorManager:
         self.Fact = kwargs.get("Fact", self.DEFAULT_PARAMS["Fact"])
 
         # Log initialization summary
-        self.logger.info(f"IntegratorManager initialized")
-        self.logger.info(f"Valid integrators: {self.VALID_INTEGRATORS}")
-        self.logger.info('-'*60)
+        self.logger.info(f"Valid integrators: {self.VALID_INTEGRATORS}| Selected: {self.integrator_name}")
+        self.integrator = self.create_integrator(self.integrator_name)
+        # self.logger.info('-'*60)
 
     def create_integrator(self, integrator):
         """

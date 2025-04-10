@@ -1,5 +1,5 @@
 from openmm import Platform
-from logger import LogManager
+from Logger import LogManager
 
 # -------------------------------------------------------------------
 # Platform Manager: Selects GPU/CPU platform and lists available platforms
@@ -18,7 +18,7 @@ class PlatformManager:
         # self.logger.info("-"*60)
         self.available_platforms = self._get_available_platforms()
         self._validate_platform()
-        self.logger.info("-"*60)
+        # self.logger.info("-"*60)
 
     def _get_available_platforms(self):
         """
@@ -36,12 +36,13 @@ class PlatformManager:
         Validate whether the requested platform is available. Logs a warning if not found.
         """
         if self.platform_name not in self.available_platforms:
+            
             self.logger.warning(
                 f"Requested platform '{self.platform_name}' not found. "
                 f"Available platforms: {', '.join(self.available_platforms)}. "
-                "Defaulting to first available platform."
+                "Defaulting to CPU."
             )
-            self.platform_name = self.available_platforms[0]
+            self.platform_name = "CPU"  # Default to CPU if requested platform is not found
         else:
             self.logger.info(f"Platform '{self.platform_name}' is available and selected.")
 

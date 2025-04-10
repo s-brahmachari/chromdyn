@@ -1,32 +1,32 @@
 from openmm import Discrete2DFunction, HarmonicBondForce, CustomNonbondedForce, CustomExternalForce, CMMotionRemover, CustomBondForce, HarmonicAngleForce
 import numpy as np
 import pandas as pd
-from logger import LogManager
+from Logger import LogManager
 
 # -------------------------------------------------------------------
 # ForceField Manager: Sets up polymer forces (e.g., harmonic bonds)
 # -------------------------------------------------------------------
 class ForceFieldManager:
-    def __init__(self, topology, logger=None,
+    def __init__(self, topology, system, logger=None,
                  Nonbonded_cutoff = 3.0,
                  Nonbonded_method = 'NonPeriodic',
                  ):
-        self.logger = logger or LogManager().get_logger()
+        self.logger = logger or LogManager().get_logger(__name__)
         self.topology = topology
         self.num_particles = topology.getNumAtoms()
-        
+        self.system = system
         self.Nonbonded_cutoff = Nonbonded_cutoff
         if Nonbonded_method=='NonPeriodic':
             self.Nonbonded_method = CustomNonbondedForce.CutoffNonPeriodic
         self.forceDict = {}
         self.force_name_map = {}
-        
-    def register_force(self, system, force_obj, name):
+            
+    def register_force(self, force_obj, name):
         """Register force with a human-readable name for later reference."""
         # if force_obj.__class__.__name__=="CustomNonbondedForce":
         #     force_obj.createExclusionsFromBonds([[int(bond[0].id),int(bond[1].id)] for bond in self.topology.bonds()], 1) 
         #     self.logger.info("Added exclusions from bonded monomers.")
-        force_index = system.addForce(force_obj)
+        force_index = self.system.addForce(force_obj)
         self.forceDict[name] = force_obj
         self.force_name_map[force_index] = name
         self.logger.info(f"{name} force successfully added to system.")
@@ -36,7 +36,7 @@ class ForceFieldManager:
         for bond in self.topology.bonds():
             force.addExclusion(int(bond[0].id), int(bond[1].id))
             
-    def removeCOM(self, system, **kwargs):
+    def removeCOM(self, **kwargs):
         """
         Removes the center-of-mass (COM) motion from the system using CMMotionRemover.
         
@@ -49,7 +49,7 @@ class ForceFieldManager:
         
         # Extract parameters from kwargs with defaults
         frequency = int(kwargs.get('frequency', 100))       # Default frequency = 10
-        forcegroup = int(kwargs.get('forcegroup', 31))    # Default force group = 31
+        forcegroup = int(kwargs.get('group', 31))    # Default force group = 31
 
         # Logging to provide clear feedback
         # self.logger.info('-'*50)
@@ -60,10 +60,9 @@ class ForceFieldManager:
         cmm_remove.setForceGroup(forcegroup)
 
         # Add to system and store in force dictionary
-        self.register_force(system, cmm_remove, "CMMRemover")
-        return cmm_remove   
+        self.register_force(cmm_remove, "CMMRemover")
 
-    def add_harmonic_bonds(self, system, **kwargs):
+    def add_harmonic_bonds(self, **kwargs):
         """
         Adds harmonic bonds between consecutive particles (or defined bonds in topology).
         Bond parameters can be passed via kwargs and are stored in self for later access.
@@ -79,7 +78,7 @@ class ForceFieldManager:
         # Extract parameters from kwargs with defaults
         bond_r = float(kwargs.get('r0', 1.0))  # Default bond length
         bond_k = float(kwargs.get('k', 10.0))            # Default bond spring constant
-        forcegroup = int(kwargs.get('forcegroup', 0))             # Default force group
+        forcegroup = int(kwargs.get('group', 0))             # Default force group
         
         # Logging for transparency
         # self.logger.info('-'*50)
@@ -95,10 +94,9 @@ class ForceFieldManager:
         self.logger.info(f"length: {bond_r}, spring constant (k): {bond_k}, group: {forcegroup}")
         
         # Add the force to the system and record in force dictionary
-        self.register_force(system, bond_force,"HarmonicBonds")
-        return bond_force
+        self.register_force( bond_force,"HarmonicBonds")
 
-    def add_harmonic_angles(self, system, **kwargs):
+    def add_harmonic_angles(self, **kwargs):
         """
         Adds harmonic angle forces between triplets of bonded particles.
         Angle parameters are passed via kwargs and stored in self for later access.
@@ -114,7 +112,7 @@ class ForceFieldManager:
         # Extract parameters from kwargs with defaults
         theta0 = float(kwargs.get('theta0', 180.0))    # Default equilibrium angle in degrees
         k_angle = float(kwargs.get('k_angle', 2.0))               # Default angle force constant (kJ/mol/rad²)
-        forcegroup = int(kwargs.get('forcegroup', 4))  # Default force group
+        forcegroup = int(kwargs.get('group', 4))  # Default force group
         
         # Convert theta0 to radians (OpenMM expects radians)
         theta0_rad = theta0 * (np.pi / 180)
@@ -154,11 +152,9 @@ class ForceFieldManager:
         self.logger.info(f"θ₀: {theta0}° ({theta0_rad:.4f} rad), k: {k_angle}, force group: {forcegroup}")
         
         # Add the force to the system and store in the force dictionary
-        self.register_force(system, angle_force, "HarmonicAngles")
-        
-        return angle_force
+        self.register_force( angle_force, "HarmonicAngles")
     
-    def add_fene_bonds(self, system, **kwargs):
+    def add_fene_bonds(self, **kwargs):
         """
         Adds FENE (Finite Extensible Nonlinear Elastic) bonds to an OpenMM system.
 
@@ -172,7 +168,7 @@ class ForceFieldManager:
         """
         k = float(kwargs.get('k', 30.0))             # FENE spring constant
         R0 = float(kwargs.get('R0', 1.5))            # Maximum extension
-        forcegroup = int(kwargs.get('forcegroup', 0))
+        forcegroup = int(kwargs.get('group', 0))
 
         self.logger.info(f"Adding FENE bonds with k={k}, R0={R0}, force group={forcegroup}")
 
@@ -188,11 +184,9 @@ class ForceFieldManager:
             fene_force.addBond(int(bond[0].id), int(bond[1].id), ())
         
         fene_force.setForceGroup(forcegroup)
-        self.register_force(system, fene_force, "FENEBonds")
-
-        return fene_force
+        self.register_force( fene_force, "FENEBonds")
     
-    def add_harmonic_trap(self, system, **kwargs):
+    def add_harmonic_trap(self,  **kwargs):
         """
         Adds a harmonic trap (restraint) to the system to confine particles within a spherical region.
         
@@ -207,7 +201,7 @@ class ForceFieldManager:
         # Extract parameters with defaults
         kr = float(kwargs.get('kr', 0.1))                           # Store kr in self
         center = kwargs.get('r0', (0.0, 0.0, 0.0))                   # Default center
-        forcegroup = int(kwargs.get('forcegroup', 1))                   # Default forcegroup
+        forcegroup = int(kwargs.get('group', 1))                   # Default forcegroup
 
         # Log the selected parameters
         # self.logger.info('-'*50)
@@ -231,11 +225,9 @@ class ForceFieldManager:
 
         # Assign the force to the appropriate force group
         restraintForce.setForceGroup(forcegroup)
-        self.register_force(system, restraintForce, "HarmonicTrap")
-        
-        return restraintForce
-    
-    def add_self_avoidance(self, system, **kwargs):
+        self.register_force( restraintForce, "HarmonicTrap")
+
+    def add_self_avoidance(self, **kwargs):
         """
         Adds soft-core self-avoidance with flexible parameters passed via kwargs.
         
@@ -250,7 +242,7 @@ class ForceFieldManager:
         Ecut = kwargs.get('Ecut', 4.0)
         kSA = kwargs.get('k', 5.0)
         rSA = kwargs.get('r', 1.0)
-        forcegroup = kwargs.get('forcegroup', 2)
+        forcegroup = kwargs.get('group', 2)
 
         # Define force
         repul_energy = "0.5 * Ecut * (1.0 + tanh((k_rep * (r_rep - r))))"
@@ -265,7 +257,7 @@ class ForceFieldManager:
         avoidance_force.addGlobalParameter('k_rep', kSA)
 
         # Add particles
-        num_particles = getattr(self, 'num_particles', system.getNumParticles())
+        num_particles = getattr(self, 'num_particles', self.system.getNumParticles())
         for _ in range(num_particles):
             avoidance_force.addParticle(())
         # self.logger.info('-'*50)
@@ -273,11 +265,9 @@ class ForceFieldManager:
         self.logger.info(f"Ecut={Ecut}, k_rep={kSA}, r_rep={rSA}, cutoff={self.Nonbonded_cutoff}, group={forcegroup}")
         # self.add_exceptions_from_bonds(avoidance_force)
         # avoidance_force.createExclusionsFromBonds([[int(bond[0].id),int(bond[1].id)] for bond in self.topology.bonds()], 1) 
-        self.register_force(system, avoidance_force, "SelfAvoidance")
-        
-        return avoidance_force
-    
-    def add_LJ_repulsion(self, system, **kwargs):
+        self.register_force(avoidance_force, "SelfAvoidance")
+
+    def add_LJ_repulsion(self, **kwargs):
         """
         Adds hard-core self-avoidance with flexible parameters passed via kwargs.
         
@@ -290,7 +280,7 @@ class ForceFieldManager:
 
         # Extract parameters with defaults using kwargs.get
         sigma = kwargs.get('sigma', 1.0)
-        forcegroup = kwargs.get('forcegroup', 6)
+        forcegroup = kwargs.get('group', 6)
 
         # Define force
         repul_energy = "(sigma / r) ^ 12"
@@ -303,7 +293,7 @@ class ForceFieldManager:
         hard_repel_force.addGlobalParameter('sigma', sigma)
         
         # Add particles
-        num_particles = getattr(self, 'num_particles', system.getNumParticles())
+        num_particles = getattr(self, 'num_particles', self.system.getNumParticles())
         for _ in range(num_particles):
             hard_repel_force.addParticle(())
         # self.logger.info('-'*50)
@@ -311,12 +301,9 @@ class ForceFieldManager:
         self.logger.info(f"sigma={sigma}, cutoff={self.Nonbonded_cutoff}, group={forcegroup}")
         # self.add_exceptions_from_bonds(avoidance_force)
         # avoidance_force.createExclusionsFromBonds([[int(bond[0].id),int(bond[1].id)] for bond in self.topology.bonds()], 1) 
-        self.register_force(system, hard_repel_force, "HardCoreLJ")
-        
-        return hard_repel_force
-    
-    
-    def add_type_to_type_interaction(self, system, interaction_matrix, type_labels, verbose=True, **kwargs):
+        self.register_force(hard_repel_force, "HardCoreLJ")
+
+    def add_type_to_type_interaction(self, interaction_matrix, type_labels, verbose=True, **kwargs):
         """
         Adds type-to-type nonbonded interactions with flexible parameter passing via kwargs.
 
@@ -349,7 +336,7 @@ class ForceFieldManager:
 
         unused_types = [t for t in type_labels if t not in used_types]
         if unused_types and verbose:
-            self.logger.warn(f"Types defined in interaction matrix but not used in topology: {unused_types}")
+            self.logger.warning(f"Types defined in interaction matrix but not used in topology: {unused_types}")
 
         # ---- Map types and subset interaction matrix ---- #
         type_to_idx = {label: idx for idx, label in enumerate(type_labels)}
@@ -383,9 +370,7 @@ class ForceFieldManager:
         self.logger.info(f"Adding Type-to-Type interaction (force group {force_group}, {num_types} types).")
         self.logger.info(f"Parameters -> mu: {self.mu}, rc: {self.rc},cutoff: {self.Nonbonded_cutoff}")
         # type_force.createExclusionsFromBonds([[int(bond[0].id),int(bond[1].id)] for bond in self.topology.bonds()], 1) 
-        self.register_force(system, type_force,"TypeToType")
-            
-        return type_force
+        self.register_force(type_force,"TypeToType")
 
     def _get_type_interaction_matrix(self, file_path):
         """
@@ -409,3 +394,92 @@ class ForceFieldManager:
             # self.logger.info(f"")
 
         return type_labels, interaction_matrix
+    
+    def add_default_forces(self, mode='default', **kwargs): 
+        type_table = str(kwargs.get('type_table', None))
+        k_res = float(kwargs.get('k_res', 1.0))            # Default bond spring constant
+        r_rep = float(kwargs.get('r_rep', 1.0))
+        chi = float(kwargs.get('chi', 0.0))
+        cmm_remove = kwargs.get('cmm_remove', None)
+        k_bond = float(kwargs.get('k_bond', 30.0))
+        r_bond = float(kwargs.get('r_bond', 1.0))
+        k_angle = float(kwargs.get('k_angle', 2.0))
+        k_rep = float(kwargs.get('k_rep', 5.0))
+        E_rep = float(kwargs.get('E_rep', 4.0))
+        theta0 = float(kwargs.get('theta0', 180.0))
+        rc = float(kwargs.get('rc', 1.5))
+        
+        """Configures system with appropriate force fields based on mode."""
+        # self.logger.info("-"*60)
+        self.logger.info(f"Setting up forces with mode='{mode}'")
+            
+        if cmm_remove: self.removeCOM(self.system)
+
+        if mode == 'default':
+            self.add_harmonic_bonds(k=k_bond, r0=r_bond)
+            type_labels, interaction_matrix = self._get_type_interaction_matrix('./type_interaction_table.csv')
+            self.add_type_to_type_interaction(interaction_matrix, type_labels)
+        
+        elif mode == 'debug':
+            self.add_harmonic_trap(kr=k_res)
+            self.add_harmonic_bonds(k=k_bond, r0=r_bond)
+            self.add_self_avoidance(Ecut=E_rep, k=k_rep, r=r_rep)
+            type_labels, interaction_matrix = self._get_type_interaction_matrix('./type_interaction_table.csv')
+            self.add_type_to_type_interaction(interaction_matrix, type_labels)
+            
+        elif mode == 'harmtrap_gauss':
+            self.add_harmonic_bonds(k=k_bond, r0=r_bond)
+            self.add_harmonic_trap(kr=k_res)
+
+        elif mode == "harmtrap_saw":
+            self.add_harmonic_bonds(k=k_bond, r0=r_bond)
+            self.add_harmonic_trap(kr=k_res)
+            self.add_self_avoidance(Ecut=E_rep, k=k_rep, r=r_rep)
+        
+        elif mode == "saw":
+            self.add_harmonic_bonds(k=k_bond, r0=r_bond)
+            self.add_self_avoidance(Ecut=E_rep, k=k_rep, r=r_rep)
+        
+        elif mode == "saw_LJ":
+            self.add_harmonic_bonds(k=k_bond, r0=r_bond)
+            self.add_LJ_repulsion(sigma=r_rep)
+        
+        elif mode == "saw_LJ_fene":
+            self.add_fene_bonds(k=k_bond)
+            self.add_LJ_repulsion(sigma=r_rep)
+            
+        elif mode=="saw_stiff_backbone":
+            self.add_harmonic_bonds(k=k_bond, r0=r_bond)
+            self.add_self_avoidance(Ecut=E_rep, k=k_rep, r=r_rep)
+            self.add_harmonic_angles(theta0=theta0, k_angle=k_angle)
+            
+        elif mode=="saw_stiff_backbone_bad_solvent":
+            self.add_harmonic_bonds(k=k_bond, r0=r_bond)
+            self.add_self_avoidance(Ecut=E_rep, k=k_rep, r=r_rep)
+            self.add_harmonic_angles(theta0=theta0, k_angle=k_angle)
+            type_labels = ["A", "B"]
+            interaction_matrix = [[chi, 0.0], [0.0, 0.0]]
+            self.add_type_to_type_interaction(interaction_matrix, type_labels, rc=rc)
+            
+        elif mode == "gauss":
+            self.add_harmonic_bonds(k=k_bond, r0=r_bond)
+        
+        elif mode == "fene":
+            self.add_fene_bonds(k=k_bond)
+            
+        elif mode == "saw_bad_solvent":
+            self.add_harmonic_bonds(k=k_bond, r0=r_bond)
+            self.add_self_avoidance(Ecut=E_rep, k=k_rep, r=r_rep)
+            type_labels = ["A", "B"]
+            interaction_matrix = [[chi, 0.0], [0.0, 0.0]]
+            self.add_type_to_type_interaction(interaction_matrix, type_labels, rc=rc)
+        
+        elif mode == "saw_LJ_bad_solvent":
+            self.add_harmonic_bonds(k=k_bond, r0=r_bond)
+            self.add_LJ_repulsion(sigma=r_rep)
+            type_labels = ["A", "B"]
+            interaction_matrix = [[chi, 0.0], [0.0, 0.0]]
+            self.add_type_to_type_interaction(interaction_matrix, type_labels, rc=rc)
+            
+        self.logger.info("Force set up complete!")
+        self.logger.info("-"*60)
