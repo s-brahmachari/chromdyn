@@ -110,7 +110,7 @@ class EnergyReporter:
                 group = force.getForceGroup()
                 force_name = self.ff_man.force_name_map.get(i, "Unnamed")
                 force_name_w_grp = f"{force_name}({group})"
-                self.saveFile.write(f"{force_name_w_grp:<15}")
+                self.saveFile.write(f"{force_name_w_grp:<20}")
         self.saveFile.write("\n")
         self.saveFile.flush()
     
@@ -167,7 +167,7 @@ class EnergyReporter:
                 state_grp = context.getState(getEnergy=True, groups={group})
                 pot_energy = state_grp.getPotentialEnergy().value_in_unit(unit.kilojoules_per_mole)
                 pe_grp_per_particle = pot_energy / num_particles
-                self.saveFile.write(f"{pe_grp_per_particle:<15.4f}")
+                self.saveFile.write(f"{pe_grp_per_particle:<20.4f}")
         
         self.saveFile.write("\n")
         self.saveFile.flush()
