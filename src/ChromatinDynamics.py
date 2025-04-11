@@ -27,6 +27,7 @@ class ChromatinDynamics:
         self.system = System()
         self.topology = topology
         self.output_dir = output_dir
+        self.logger.info(f"Storing output in {self.output_dir}")
         self.num_particles = topology.getNumAtoms()
         for _ in range(self.num_particles):
             self.system.addParticle(1.0) # adding mass=1.0, modify for virtual particles
@@ -44,6 +45,8 @@ class ChromatinDynamics:
         init_struct=kwargs.get('init_struct', 'randomwalk')
         integrator=kwargs.get('integrator', "langevin")
         temperature=kwargs.get('temperature', 120.0)
+        save_pos = kwargs.get('save_pos', True)
+        save_energy = kwargs.get('save_energy', True)
         
         self.logger.info("-"*60)
         self.integrator_manager = IntegratorManager(integrator=integrator, temperature=temperature, logger=self.logger)
@@ -59,19 +62,20 @@ class ChromatinDynamics:
         self.logger.info(f"Simulation set up complete!")
         # self.logger.info("-"*60)
         self.print_force_info()
-        self.simulation.reporters.append(
-            StabilityReporter(os.path.join(self.output_dir, self.name+"_stability_report.txt"), reportInterval=100, logger=self.logger,))
+        instability_report_file = os.path.join(self.output_dir, self.name+"_stability_report.txt")
+        self.simulation.reporters.append(StabilityReporter(instability_report_file, reportInterval=100, logger=self.logger,))
+        self.logger.info(f"Creating Instability report at {instability_report_file}.")
+            
+        if save_energy:
+            energy_report_file = os.path.join(self.output_dir, self.name+"_energy_report.txt")
+            self.simulation.reporters.append(EnergyReporter(energy_report_file, self.force_field_manager, reportInterval=1000, reportForceGrp=True))
+            self.logger.info(f"Created Energy reporter at {energy_report_file}.")
         
-        self.simulation.reporters.append(
-            EnergyReporter(os.path.join(self.output_dir, self.name+"_energy_report.txt"), self.force_field_manager, reportInterval=1000, reportForceGrp=True))
+        if save_pos:
+            position_report_file = os.path.join(self.output_dir, self.name+"_positions.cndb")
+            self.simulation.reporters.append(SaveStructure(position_report_file, reportInterval=1000,))
+            self.logger.info(f"Created Position reporter at {position_report_file}.")
         
-        # self.simulation.reporters.append(
-        #     StateDataReporter(os.path.join(self.output_dir, self.name+"_energy_report.csv"), 1000,
-        #                       step=True, potentialEnergy=True, kineticEnergy=True, totalEnergy=True, temperature=True))
-        
-        self.simulation.reporters.append(
-            SaveStructure(os.path.join(self.output_dir, self.name+"_positions.cndb"), reportInterval=1000,))
-    
     def run(self, n_steps, verbose=True):
         """Runs the simulation and reports performance."""
         if verbose:
