@@ -321,7 +321,7 @@ class ForceFieldManager:
         # ---- Extract parameters directly from kwargs with defaults ---- #
         self.mu = kwargs.get('mu', 5.0)                   # Steepness parameter for tanh
         self.rc = kwargs.get('rc', 1.5)                  # Reference distance for tanh
-        force_group = kwargs.get('force_group', 5)       # Force group index
+        force_group = kwargs.get('group', 5)       # Force group index
 
         # ---- Extract type list from topology ---- #
         type_list = [atom.element for atom in self.topology.atoms()]

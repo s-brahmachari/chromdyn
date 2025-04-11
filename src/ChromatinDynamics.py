@@ -47,6 +47,9 @@ class ChromatinDynamics:
         temperature=kwargs.get('temperature', 120.0)
         save_pos = kwargs.get('save_pos', True)
         save_energy = kwargs.get('save_energy', True)
+        stability_report_interval = kwargs.get('stability_report_interval', 500)
+        energy_report_interval = kwargs.get('energy_report_interval', 1000)
+        pos_report_interval = kwargs.get('pos_report_interval', 1000)
         
         self.logger.info("-"*60)
         self.integrator_manager = IntegratorManager(integrator=integrator, temperature=temperature, logger=self.logger)
@@ -63,17 +66,27 @@ class ChromatinDynamics:
         # self.logger.info("-"*60)
         self.print_force_info()
         instability_report_file = os.path.join(self.output_dir, self.name+"_stability_report.txt")
-        self.simulation.reporters.append(StabilityReporter(instability_report_file, reportInterval=100, logger=self.logger,))
+        self.simulation.reporters.append(StabilityReporter(instability_report_file, 
+                                                           reportInterval=stability_report_interval, 
+                                                           logger=self.logger,)
+                                         )
         self.logger.info(f"Creating Instability report at {instability_report_file}.")
             
         if save_energy:
             energy_report_file = os.path.join(self.output_dir, self.name+"_energy_report.txt")
-            self.simulation.reporters.append(EnergyReporter(energy_report_file, self.force_field_manager, reportInterval=1000, reportForceGrp=True))
+            self.simulation.reporters.append(EnergyReporter(energy_report_file, 
+                                                            self.force_field_manager, 
+                                                            reportInterval=energy_report_interval, 
+                                                            reportForceGrp=True,)
+                                             )
+            
             self.logger.info(f"Created Energy reporter at {energy_report_file}.")
         
         if save_pos:
             position_report_file = os.path.join(self.output_dir, self.name+"_positions.cndb")
-            self.simulation.reporters.append(SaveStructure(position_report_file, reportInterval=1000,))
+            self.simulation.reporters.append(SaveStructure(position_report_file, 
+                                                           reportInterval=pos_report_interval,)
+                                             )
             self.logger.info(f"Created Position reporter at {position_report_file}.")
         
     def run(self, n_steps, verbose=True):

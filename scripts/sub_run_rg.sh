@@ -5,36 +5,24 @@ counter2=0
 out_str=""
 code_home=/home/sb95/ChromatinDynamics
 nrep=10
-# for mode in gauss saw saw_stiff_backbone saw_bad_solvent saw_stiff_backbone_bad_solvent; do
-for mode in saw_stiff_backbone_bad_solvent; do
-
-data_home=/work/cms16/sb95/Finzi_collab_bad_solvent_2/$mode
-
+data_home=/work/cms16/sb95/Finzi_collab_bad_solvent_different_temp/
+# rm -r $data_home
 mkdir -p -v $data_home
-
-cp -r $code_home $data_home
-cp $code_home/run_rg.py $data_home
+cp -r $code_home/src $data_home
+cp $code_home/scripts/run_rg.py $data_home
 cd $data_home
-mkdir input
-# for N in 100 200 500 800 1000 2000 5000 10000; do
-for N in 500 1000; do
-for kbond in 30.0; do
-for kres in 0.0; do
-for ka in 10.0; do # 2.0 5.0; do
-for chi in -0.05 -0.1 -0.15 -0.2 -0.25 -0.3 -0.35 -0.4 -0.45 -0.5 -0.55 -0.6 -0.65 -0.7; do
-for ecut in 8.0; do
-for rrep in 0.7; do
-for rc in 1.75; do
 
-savefolder=output_N${N}_kbond${kbond}_ka${ka}_chi${chi}_ecut${ecut}_rrep${rrep}_kres${kres}_rc${rc}
-mkdir -p -v $savefolder
+for N in 500 1000; do
+for chi in -0.2 -0.4 -0.6 -0.8 -1.0; do
+for temp in 90.0 120.0 150.0 180.0 200.0 230.0 260.0 290.0; do
+save_folder=$data_home/N_$N/chi_$chi/temp_$temp
+# mkdir -p -v $save_folder
 
 if [[ -z "$out_str" ]]; then
-    out_str=$"python run_rg.py -mode ${mode} -N ${N} -kbond ${kbond} -kangle ${ka} -Erep ${ecut} -rrep ${rrep} -chi ${chi} -rc ${rc} -kres ${kres} -output ${savefolder} -Nrep $nrep > ${savefolder}/output.log"
+    out_str=$"python run_rg.py -N ${N} -chi ${chi} -temp ${temp} -Nrep ${nrep} -output ${save_folder}"
 else
-    out_str+=$'\n'"python run_rg.py -mode ${mode} -N ${N} -kbond ${kbond} -kangle ${ka} -Erep ${ecut} -rrep ${rrep} -chi ${chi} -rc ${rc} -kres ${kres} -output ${savefolder} -Nrep $nrep > ${savefolder}/output.log"
+    out_str+=$'\n'"python run_rg.py -N ${N} -chi ${chi} -temp ${temp} -Nrep ${nrep} -output ${save_folder}"
 fi
-# out_str+=$'\n'"python run_rg.py ${ka} ${chi} ${ecut} ${savefolder} > ${savefolder}/output.log"
 
 ((counter++))
 ((counter2++))
@@ -43,7 +31,7 @@ if (( counter == 16 )); then
 # echo "$out_str"
 sbatch_file="#!/bin/bash -l
 
-#SBATCH --job-name=$mode
+#SBATCH --job-name=collapse
 #SBATCH --account=commons
 #SBATCH --partition=commons
 #SBATCH --nodes=1            # this can be more, up to 22 on aries
@@ -57,8 +45,8 @@ sbatch_file="#!/bin/bash -l
 
 module purge
 module load foss/2020b Launcher_GPU OpenMPI 
-source \$HOME/anaconda3/bin/activate
-conda activate openmm
+source \$HOME/miniforge3/bin/activate
+conda activate openmm-env
 
 # Controlling Launcher and showing some job info
 export LAUNCHER_WORKDIR=\`pwd\`
@@ -83,18 +71,12 @@ fi
 done
 done
 done
-done
-done
-done
-done
-done
-done
 # Print remaining commands if any
 if [[ -n "$out_str" ]]; then
 echo "$out_str"
 sbatch_file="#!/bin/bash -l
 
-#SBATCH --job-name=$mode
+#SBATCH --job-name=collapse
 #SBATCH --account=commons
 #SBATCH --partition=commons
 #SBATCH --nodes=1            # this can be more, up to 22 on aries
@@ -108,8 +90,8 @@ sbatch_file="#!/bin/bash -l
 
 module purge
 module load foss/2020b Launcher_GPU OpenMPI 
-source \$HOME/anaconda3/bin/activate
-conda activate openmm
+source \$HOME/miniforge3/bin/activate
+conda activate openmm-env
 
 # Controlling Launcher and showing some job info
 export LAUNCHER_WORKDIR=\`pwd\`
