@@ -15,6 +15,7 @@ class SaveStructure:
             raise ValueError(f"Unsupported file format: {mode}. Supported formats are 'cndb'.")
         self.mode = mode
         self.savestep = 0
+        self.is_paused = False
 
         if self.mode == 'cndb':
             if os.path.exists(self.filename):
@@ -29,6 +30,12 @@ class SaveStructure:
 
     def close(self):
         self.saveFile.close()
+    
+    def pause(self):
+        self.is_paused = True
+    
+    def resume(self):
+        self.is_paused = False
 
     def describeNextReport(self, simulation):
         """Get information about the next report this object will generate.
@@ -48,15 +55,16 @@ class SaveStructure:
             simulation: The Simulation to generate a report for.
             state: The current State of the simulation.
         """
-        # Get positions as a NumPy array in nanometers
-        data = state.getPositions(asNumpy=True).value_in_unit(unit.nanometer)
+        if not self.is_paused:
+            # Get positions as a NumPy array in nanometers
+            data = state.getPositions(asNumpy=True).value_in_unit(unit.nanometer)
 
-        # Save the structure based on the specified mode
-        if self.mode == 'cndb':
-            self.saveFile[str(self.savestep)] = np.array(data)
-        else:
-            raise ValueError(f"Unsupported mode: {self.mode}")
-        self.savestep += 1
+            # Save the structure based on the specified mode
+            if self.mode == 'cndb':
+                self.saveFile[str(self.savestep)] = np.array(data)
+            else:
+                raise ValueError(f"Unsupported mode: {self.mode}")
+            self.savestep += 1
     
 class StabilityReporter:
     def __init__(self, filename, reportInterval=100, logger=None,
@@ -101,7 +109,14 @@ class EnergyReporter:
         self.ff_man = force_field_manager
         self.report_force_grp = reportForceGrp
         self.is_initialized = False
+        self.is_paused = False
     
+    def pause(self):
+        self.is_paused = True
+    
+    def resume(self):
+        self.is_paused=False
+        
     def _make_header(self, simulation):
         system = simulation.system
         self.saveFile.write(f"{'Step':<10} {'Temperature':<12} {'Rag Gyr':<10} {'K.E./particle':<15} {'P.E./particle':<15}")
@@ -145,32 +160,33 @@ class EnergyReporter:
         if not self.is_initialized: 
             self._initialize_constants(simulation)
             self._make_header(simulation)
+
+        if not self.is_paused:            
+            system = simulation.system
+            context = simulation.context
+            num_particles = system.getNumParticles()
+            positions = state.getPositions(asNumpy=True).value_in_unit(unit.nanometers)
+            Rg = compute_RG(positions)
+            # temperature = simulation.integrator.getTemperature().value_in_unit(unit.kelvin)
+            integrator = simulation.context.getIntegrator()
+            if hasattr(integrator, 'computeSystemTemperature'):
+                temperature = integrator.computeSystemTemperature().value_in_unit(unit.kelvin)
+            else:
+                temperature = (2*state.getKineticEnergy()/(self._dof*unit.MOLAR_GAS_CONSTANT_R)).value_in_unit(unit.kelvin)    
+            ke_per_particle = state.getKineticEnergy().value_in_unit(unit.kilojoules_per_mole) / num_particles
+            pe_per_particle = state.getPotentialEnergy().value_in_unit(unit.kilojoules_per_mole) / num_particles
+            self.saveFile.write(f"{simulation.currentStep:<10} {temperature:<12.3f} {Rg:<10.4f} {ke_per_particle:<15.4f} {pe_per_particle:<15.4f}") 
             
-        system = simulation.system
-        context = simulation.context
-        num_particles = system.getNumParticles()
-        positions = state.getPositions(asNumpy=True).value_in_unit(unit.nanometers)
-        Rg = compute_RG(positions)
-        # temperature = simulation.integrator.getTemperature().value_in_unit(unit.kelvin)
-        integrator = simulation.context.getIntegrator()
-        if hasattr(integrator, 'computeSystemTemperature'):
-            temperature = integrator.computeSystemTemperature().value_in_unit(unit.kelvin)
-        else:
-            temperature = (2*state.getKineticEnergy()/(self._dof*unit.MOLAR_GAS_CONSTANT_R)).value_in_unit(unit.kelvin)    
-        ke_per_particle = state.getKineticEnergy().value_in_unit(unit.kilojoules_per_mole) / num_particles
-        pe_per_particle = state.getPotentialEnergy().value_in_unit(unit.kilojoules_per_mole) / num_particles
-        self.saveFile.write(f"{simulation.currentStep:<10} {temperature:<12.3f} {Rg:<10.4f} {ke_per_particle:<15.4f} {pe_per_particle:<15.4f}") 
-        
-        if self.report_force_grp:
-            for i, force in enumerate(system.getForces()):
-                group = force.getForceGroup()
-                state_grp = context.getState(getEnergy=True, groups={group})
-                pot_energy = state_grp.getPotentialEnergy().value_in_unit(unit.kilojoules_per_mole)
-                pe_grp_per_particle = pot_energy / num_particles
-                self.saveFile.write(f"{pe_grp_per_particle:<20.4f}")
-        
-        self.saveFile.write("\n")
-        self.saveFile.flush()
+            if self.report_force_grp:
+                for i, force in enumerate(system.getForces()):
+                    group = force.getForceGroup()
+                    state_grp = context.getState(getEnergy=True, groups={group})
+                    pot_energy = state_grp.getPotentialEnergy().value_in_unit(unit.kilojoules_per_mole)
+                    pe_grp_per_particle = pot_energy / num_particles
+                    self.saveFile.write(f"{pe_grp_per_particle:<20.4f}")
+            
+            self.saveFile.write("\n")
+            self.saveFile.flush()
        
 def compute_RG(positions):
     center_of_mass = np.mean(positions, axis=0)

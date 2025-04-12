@@ -74,19 +74,18 @@ class ChromatinDynamics:
             
         if save_energy:
             energy_report_file = os.path.join(self.output_dir, self.name+"_energy_report.txt")
-            self.simulation.reporters.append(EnergyReporter(energy_report_file, 
-                                                            self.force_field_manager, 
-                                                            reportInterval=energy_report_interval, 
-                                                            reportForceGrp=True,)
-                                             )
-            
+            self.energy_reporter = EnergyReporter(energy_report_file, 
+                                                  self.force_field_manager, 
+                                                  reportInterval=energy_report_interval, 
+                                                  reportForceGrp=True,)
+            self.simulation.reporters.append(self.energy_reporter)
             self.logger.info(f"Created Energy reporter at {energy_report_file}.")
         
         if save_pos:
             position_report_file = os.path.join(self.output_dir, self.name+"_positions.cndb")
-            self.simulation.reporters.append(SaveStructure(position_report_file, 
-                                                           reportInterval=pos_report_interval,)
-                                             )
+            self.pos_reporter = SaveStructure(position_report_file, 
+                                              reportInterval=pos_report_interval,)
+            self.simulation.reporters.append(self.pos_reporter)
             self.logger.info(f"Created Position reporter at {position_report_file}.")
         
     def run(self, n_steps, verbose=True):
