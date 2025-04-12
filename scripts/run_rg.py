@@ -38,12 +38,13 @@ for replica in range(Nrep):
         topology=generator.topology,
         platform_name="OpenCL", 
         name=f'polymer_{replica}',
-        output_dir=f"{args.output}"
+        output_dir=f"{args.output}",
+        console_stream=False,
         )
 
     sim.force_field_manager.add_harmonic_bonds(k=30.0, r0=1.0, group=0)
     sim.force_field_manager.add_self_avoidance(Ecut=4.0, k=5.0, r=1.0, group=1)
-    sim.force_field_manager.add_type_to_type_interaction(interaction_matrix, type_labels, mu=2.0, rc=1.5, group=3)
+    sim.force_field_manager.add_type_to_type_interaction(interaction_matrix, type_labels, mu=2.0, rc=2.0, group=2)
     
     sim.simulation_setup(
         init_struct='randomwalk',
