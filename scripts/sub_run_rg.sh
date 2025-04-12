@@ -12,8 +12,8 @@ cp -r $code_home/src $data_home
 cp $code_home/scripts/run_rg.py $data_home
 cd $data_home
 
-for N in 500 1000; do
-for chi in -0.2 -0.4 -0.6 -0.8 -1.0; do
+for N in 100 200 800 2000 5000; do
+for chi in -0.2 -0.6 -1.0; do
 for temp in 90.0 120.0 150.0 180.0 200.0 230.0 260.0 290.0; do
 save_folder=$data_home/N_$N/chi_$chi/temp_$temp
 # mkdir -p -v $save_folder
