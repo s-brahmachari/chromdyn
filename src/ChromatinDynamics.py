@@ -16,9 +16,9 @@ class ChromatinDynamics:
     - System setup, forces, integrators, analysis, and logging.
     """
 
-    def __init__(self, topology, name='ChromatinDynamics', platform_name="CUDA", output_dir="output"):
+    def __init__(self, topology, name='ChromatinDynamics', platform_name="CUDA", output_dir="output", console_stream=True):
         
-        self.logger = LogManager(log_file=os.path.join(output_dir,name+'.log')).get_logger(__name__)
+        self.logger = LogManager(log_file=os.path.join(output_dir,name+'.log')).get_logger(__name__, console=console_stream)
         
         self.logger.info('*' * 60)
         self.logger.info(f"{'Chromatin Dynamics':^{60}}")

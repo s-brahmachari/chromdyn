@@ -17,7 +17,7 @@ class LogManager:
         self.log_format = log_format
         self.log_file = log_file
 
-    def get_logger(self, name):
+    def get_logger(self, name, console=True):
         """
         Get a logger instance with console and optional file handler.
 
@@ -35,13 +35,12 @@ class LogManager:
             
         # Avoid adding multiple handlers if logger already has handlers
         if not logger.handlers:
-            formatter = logging.Formatter(self.log_format)
-        
             # Console handler
-            console_handler = logging.StreamHandler()
-            console_handler.setLevel(logging.INFO)
-            console_handler.setFormatter(logging.Formatter('%(asctime)s | %(levelname)s | %(module)s | %(message)s'))
-            logger.addHandler(console_handler)
+            if console:
+                console_handler = logging.StreamHandler()
+                console_handler.setLevel(logging.INFO)
+                console_handler.setFormatter(logging.Formatter('%(asctime)s | %(levelname)s | %(module)s | %(message)s'))
+                logger.addHandler(console_handler)
 
             # Optional file handler
             if self.log_file:
