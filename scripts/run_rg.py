@@ -27,7 +27,7 @@ Nrep = int(args.Nrep)
 generator = TopologyGenerator()
 # By default all monomers have type "A"
 generator.gen_top([N_poly])
-num_blocks = 1000
+num_blocks = 100
 
 type_labels = ["A", "B"]
 interaction_matrix = [[chi, 0.0], [0.0, 0.0]]
@@ -42,20 +42,29 @@ for replica in range(Nrep):
         console_stream=False,
         )
 
-    sim.force_field_manager.add_harmonic_bonds(k=30.0, r0=1.0, group=0)
-    sim.force_field_manager.add_self_avoidance(Ecut=4.0, k=5.0, r=1.0, group=1)
-    sim.force_field_manager.add_type_to_type_interaction(interaction_matrix, type_labels, mu=2.0, rc=2.0, group=2)
+    sim.force_field_manager.add_harmonic_bonds(k=200.0, r0=1.0, group=0)
+    # sim.force_field_manager.add_self_avoidance(Ecut=4.0, k=5.0, r=1.0, group=1)
+    sim.force_field_manager.add_lennard_jones_force(epsilon=chi, sigma=1.0, group=1)
+    # sim.force_field_manager.add_type_to_type_interaction(interaction_matrix, type_labels, mu=2.0, rc=2.0, group=2)
     
     sim.simulation_setup(
-        init_struct='randomwalk',
+        init_struct='saw3d',
         integrator='langevin',
         temperature=temp,
-        save_pos=False,
+        timestep=0.008,
+        save_pos=True,
         save_energy=True,
-        energy_report_interval=1000,                
+        energy_report_interval=1000,  
+        pos_report_interval=10_000,              
         )
     
-    sim.run(100_000) #relax
+    sim.energy_reporter.pause()
+    sim.pos_reporter.pause()
+    sim.run(2_000_000) #equilibrate and dont save rg
+    sim.energy_reporter.resume()
+    sim.pos_reporter.resume()
     
     for _ in range(num_blocks):
-        sim.run(1000)
+        sim.run(10_000)
+        
+    sim.pos_reporter.close()

@@ -34,7 +34,7 @@ class ChromatinDynamics:
         self.logger.info(f"System initialized with {self.system.getNumParticles()} particles.")
             
         self.platform_manager = PlatformManager(platform_name, logger=self.logger)
-        self.force_field_manager = ForceFieldManager(self.topology, self.system, logger=self.logger)
+        self.force_field_manager = ForceFieldManager(self.topology, self.system, logger=self.logger, Nonbonded_cutoff=5.0)
         self.logger.info('force_field_manager initialized. Use this to add forces to the system before setting up simulation.')
         self.simulation = None
         self.logger.info("-"*60)
@@ -45,6 +45,7 @@ class ChromatinDynamics:
         init_struct=kwargs.get('init_struct', 'randomwalk')
         integrator=kwargs.get('integrator', "langevin")
         temperature=kwargs.get('temperature', 120.0)
+        timestep=kwargs.get('timestep', 0.01)
         save_pos = kwargs.get('save_pos', True)
         save_energy = kwargs.get('save_energy', True)
         stability_report_interval = kwargs.get('stability_report_interval', 500)
@@ -52,7 +53,7 @@ class ChromatinDynamics:
         pos_report_interval = kwargs.get('pos_report_interval', 1000)
         
         self.logger.info("-"*60)
-        self.integrator_manager = IntegratorManager(integrator=integrator, temperature=temperature, logger=self.logger)
+        self.integrator_manager = IntegratorManager(integrator=integrator, temperature=temperature, logger=self.logger, timestep=timestep)
         self.simulation = Simulation(self.topology, 
                                      self.system, 
                                      self.integrator_manager.integrator, 
@@ -68,7 +69,8 @@ class ChromatinDynamics:
         instability_report_file = os.path.join(self.output_dir, self.name+"_stability_report.txt")
         self.simulation.reporters.append(StabilityReporter(instability_report_file, 
                                                            reportInterval=stability_report_interval, 
-                                                           logger=self.logger,)
+                                                           logger=self.logger,
+                                                           kinetic_threshold=100.0)
                                          )
         self.logger.info(f"Creating Instability report at {instability_report_file}.")
             

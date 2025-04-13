@@ -4,18 +4,18 @@ counter=0
 counter2=0
 out_str=""
 code_home=/home/sb95/ChromatinDynamics
-nrep=10
-data_home=/work/cms16/sb95/Finzi_collab_bad_solvent_different_temp_strong_bond/
+nrep=8
+data_home=/work/cms16/sb95/SAW_coil_globule
 # rm -r $data_home
 mkdir -p -v $data_home
 cp -r $code_home/src $data_home
 cp $code_home/scripts/run_rg.py $data_home
 cd $data_home
-for chi in -0.1 -0.5 -1.0; do
-for temp in {60..300..60}; do
-for N in 100 200 500 800 1000 2000 5000; do
+for chi in 1.0; do
+for temp in {60..1000..120}; do
+for N in 100 200 500 800 1000 2000; do
 
-save_folder=$data_home/chi_$chi/temp_$temp/N_$N
+save_folder=$data_home/epsilon_$chi/temp_$temp/N_$N
 # mkdir -p -v $save_folder
 
 if [[ -z "$out_str" ]]; then
@@ -27,7 +27,7 @@ fi
 ((counter++))
 ((counter2++))
 
-if (( counter == 16 )); then
+if (( counter == 8 )); then
 # echo "$out_str"
 sbatch_file="#!/bin/bash -l
 

@@ -23,9 +23,9 @@ class ForceFieldManager:
             
     def register_force(self, force_obj, name):
         """Register force with a human-readable name for later reference."""
-        # if force_obj.__class__.__name__=="CustomNonbondedForce":
-        #     force_obj.createExclusionsFromBonds([[int(bond[0].id),int(bond[1].id)] for bond in self.topology.bonds()], 1) 
-        #     self.logger.info("Added exclusions from bonded monomers.")
+        if force_obj.__class__.__name__=="CustomNonbondedForce":
+            force_obj.createExclusionsFromBonds([[int(bond[0].id),int(bond[1].id)] for bond in self.topology.bonds()], 1) 
+            self.logger.info("Added exclusions from bonded monomers.")
         force_index = self.system.addForce(force_obj)
         self.forceDict[name] = force_obj
         self.force_name_map[force_index] = name
@@ -267,6 +267,44 @@ class ForceFieldManager:
         # avoidance_force.createExclusionsFromBonds([[int(bond[0].id),int(bond[1].id)] for bond in self.topology.bonds()], 1) 
         self.register_force(avoidance_force, "SelfAvoidance")
 
+    def add_lennard_jones_force(self, **kwargs):
+        """
+        Adds a standard Lennard-Jones (LJ) nonbonded force using custom parameters.
+        
+        Args:
+            system (System): OpenMM system object.
+            **kwargs: Flexible parameters like epsilon, sigma, forcegroup.
+                    Example: {'epsilon': 0.5, 'sigma': 1.0, 'forcegroup': 3}
+        """
+        # Extract parameters from kwargs
+        epsilon = kwargs.get('epsilon', 0.5)  # depth of the potential well
+        sigma = kwargs.get('sigma', 1.0)      # distance at which potential = 0
+        forcegroup = kwargs.get('group', 3)
+
+        # Define LJ potential (scalar form)
+        lj_energy = "4 * epsilon_lj * ((sigma_lj / r) ^ 12 - (sigma_lj / r) ^ 6)"
+
+        # Create the custom nonbonded force
+        lj_force = CustomNonbondedForce(lj_energy)
+        lj_force.setForceGroup(forcegroup)
+        lj_force.setCutoffDistance(self.Nonbonded_cutoff)
+        lj_force.setNonbondedMethod(self.Nonbonded_method)
+
+        # Add global parameters
+        lj_force.addGlobalParameter('epsilon_lj', epsilon)
+        lj_force.addGlobalParameter('sigma_lj', sigma)
+
+        # Add particles (with no per-particle parameters in this form)
+        num_particles = getattr(self, 'num_particles', self.system.getNumParticles())
+        for _ in range(num_particles):
+            lj_force.addParticle(())
+
+        self.logger.info(f"Adding Lennard-Jones force:")
+        self.logger.info(f"epsilon={epsilon}, sigma={sigma}, cutoff={self.Nonbonded_cutoff}, group={forcegroup}")
+
+        # Register the force into your system
+        self.register_force(lj_force, "LennardJones")
+
     def add_LJ_repulsion(self, **kwargs):
         """
         Adds hard-core self-avoidance with flexible parameters passed via kwargs.
@@ -483,3 +521,43 @@ class ForceFieldManager:
             
         self.logger.info("Force set up complete!")
         self.logger.info("-"*60)
+
+    def _initialize_mono_pos_constraint(self, group):
+        constraint_energy = "0.5 * k_constraint * dist ^ 2 ;\
+                 dist = sqrt((x - x_con) ^ 2  + (y - y_con) ^ 2 + (z - z_con) ^ 2)"
+        
+        constraint_force = CustomExternalForce(constraint_energy)
+        constraint_force.addPerParticleParameter("k_constraint")
+        constraint_force.addPerParticleParameter("x_con")
+        constraint_force.addPerParticleParameter("y_con")
+        constraint_force.addPerParticleParameter("z_con") 
+        constraint_force.setForceGroup(group)
+        
+        self.register_force(constraint_force, "MonoPosConstraint")
+        
+    def constrain_monomer_pos(self, mono_id, pos, **kwargs):
+        k = kwargs.get('k',50.0)
+        forcegroup = kwargs.get('group', 8)
+                
+        if 'MonoPosConstraint' not in self.forceDict.keys(): 
+            self._initialize_mono_pos_constraint(forcegroup)
+        
+        self.forceDict['MonoPosConstraint'].addParticle(int(mono_id), [float(k), float(pos[0]), float(pos[1]), float(pos[2])])
+        
+    def _initialize_force_z_axis(self, group):
+        z_pulling_energy = "- f_z * z + 0.5 * k_xy * ( x * x + y * y )"
+        z_pulling_force = CustomExternalForce(z_pulling_energy)
+        z_pulling_force.addPerParticleParameter("f_z")
+        z_pulling_force.addPerParticleParameter("k_xy")
+        z_pulling_force.setForceGroup(group)
+        self.register_force(z_pulling_force, "zAxialPull")
+
+    def apply_force_z_axis(self, mono_id, fz, **kwargs):
+        forcegroup = kwargs.get('group', 9)
+        k_xy = kwargs.get('k_xy', 100.0)
+        
+        if "zAxialPull" not in self.forceDict.keys():
+            self._initialize_force_z_axis(forcegroup)
+            
+        self.forceDict["zAxialPull"].addParticle(int(mono_id), [float(fz), float(k_xy)])
+        
