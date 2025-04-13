@@ -82,7 +82,7 @@ class StabilityReporter:
         Required by OpenMM Reporter interface. Specifies when the next report should occur.
         """
         steps_to_next_report = self.interval - simulation.currentStep % self.interval
-        return (steps_to_next_report, True, False, False, True)  # positions, velocites, forces, energies
+        return (steps_to_next_report, False, False, False, True)  # positions, velocites, forces, energies
 
     def report(self, simulation, state):
         """
@@ -92,14 +92,13 @@ class StabilityReporter:
         num_particles = simulation.system.getNumParticles()
         e_kinetic = state.getKineticEnergy().value_in_unit(unit.kilojoules_per_mole) / num_particles
         e_potential = state.getPotentialEnergy().value_in_unit(unit.kilojoules_per_mole) / num_particles
-        positions = state.getPositions(asNumpy=True).value_in_unit(unit.nanometers)
         temperature = simulation.integrator.getTemperature().value_in_unit(unit.kelvin)
-        if e_kinetic > self.kinetic_threshold or abs(e_potential) > self.potential_threshold or np.isnan(positions).any():
-            self.logger.warning(f"<<INSTABILITY DETECTED>> at step {simulation.currentStep}: K.E. = {e_kinetic:.2f} | P.E. = {e_potential:.2f} | NaN positions: {np.isnan(positions).any()}.")
+        if e_kinetic > self.kinetic_threshold or abs(e_potential) > self.potential_threshold:
+            self.logger.warning(f"<<INSTABILITY DETECTED>> at step {simulation.currentStep}: K.E. = {e_kinetic:.2f} | P.E. = {e_potential:.2f} ")
             # If thresholds exceeded, reinitialize velocities
             seed = np.random.randint(100_000)
             simulation.context.setVelocitiesToTemperature(temperature, seed)
-            self.saveFile.write(f"Step {simulation.currentStep}: K.E. = {e_kinetic:.2f} | P.E. = {e_potential:.2f} | NaN positions: {np.isnan(positions).any()} | Reinitialized velocities.\n")
+            self.saveFile.write(f"Step {simulation.currentStep}: K.E. = {e_kinetic:.2f} | P.E. = {e_potential:.2f} | Reinitialized velocities.\n")
             self.saveFile.flush()  # Ensure the file is written immediately
 
 class EnergyReporter:

@@ -70,7 +70,8 @@ class ChromatinDynamics:
         self.simulation.reporters.append(StabilityReporter(instability_report_file, 
                                                            reportInterval=stability_report_interval, 
                                                            logger=self.logger,
-                                                           kinetic_threshold=100.0)
+                                                           kinetic_threshold=1e5,
+                                                           potential_threshold=1e5)
                                          )
         self.logger.info(f"Creating Instability report at {instability_report_file}.")
             
