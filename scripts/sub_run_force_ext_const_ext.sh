@@ -5,7 +5,7 @@ counter2=0
 out_str=""
 code_home=/home/sb95/ChromatinDynamics
 nrep=8
-data_home=/work/cms16/sb95/SAW_globule_extension_const_force
+data_home=/work/cms16/sb95/SAW_globule_extension_const_ext
 # rm -r $data_home
 mkdir -p -v $data_home
 cp -r $code_home/src $data_home
@@ -14,9 +14,9 @@ cd $data_home
 for chi in 1.0; do
 for temp in 120 240; do
 for N in 500; do
-for z in 10.0 30.0 50.0 70.0 90.0 110.0 130.0 150.0;
+for z in 10.0 30.0 50.0 70.0 90.0 110.0 130.0 150.0; do
 
-save_folder=$data_home/epsilon_$chi/temp_$temp/N_$N/fz$fz
+save_folder=$data_home/epsilon_$chi/temp_$temp/N_$N/z$z
 # mkdir -p -v $save_folder
 
 if [[ -z "$out_str" ]]; then
@@ -32,7 +32,7 @@ if (( counter == 8 )); then
 # echo "$out_str"
 sbatch_file="#!/bin/bash -l
 
-#SBATCH --job-name=collapse
+#SBATCH --job-name=fext
 #SBATCH --account=commons
 #SBATCH --partition=commons
 #SBATCH --nodes=1            # this can be more, up to 22 on aries
@@ -72,12 +72,13 @@ fi
 done
 done
 done
+done
 # Print remaining commands if any
 if [[ -n "$out_str" ]]; then
 echo "$out_str"
 sbatch_file="#!/bin/bash -l
 
-#SBATCH --job-name=collapse
+#SBATCH --job-name=fext
 #SBATCH --account=commons
 #SBATCH --partition=commons
 #SBATCH --nodes=1            # this can be more, up to 22 on aries

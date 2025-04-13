@@ -14,7 +14,7 @@ cd $data_home
 for chi in 1.0; do
 for temp in 120 240; do
 for N in 500; do
-for fz in 1.0 2.0 3.0 4.0 5.0 6.0 7.0 8.0;
+for fz in 1.0 2.0 3.0 4.0 5.0 6.0 7.0 8.0; do
 
 save_folder=$data_home/epsilon_$chi/temp_$temp/N_$N/fz$fz
 # mkdir -p -v $save_folder
@@ -32,7 +32,7 @@ if (( counter == 8 )); then
 # echo "$out_str"
 sbatch_file="#!/bin/bash -l
 
-#SBATCH --job-name=collapse
+#SBATCH --job-name=fext
 #SBATCH --account=commons
 #SBATCH --partition=commons
 #SBATCH --nodes=1            # this can be more, up to 22 on aries
@@ -78,7 +78,7 @@ if [[ -n "$out_str" ]]; then
 echo "$out_str"
 sbatch_file="#!/bin/bash -l
 
-#SBATCH --job-name=collapse
+#SBATCH --job-name=fext
 #SBATCH --account=commons
 #SBATCH --partition=commons
 #SBATCH --nodes=1            # this can be more, up to 22 on aries
