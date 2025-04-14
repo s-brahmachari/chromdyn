@@ -111,7 +111,7 @@ class ForceFieldManager:
         
         # Extract parameters from kwargs with defaults
         theta0 = float(kwargs.get('theta0', 180.0))    # Default equilibrium angle in degrees
-        k_angle = float(kwargs.get('k_angle', 2.0))               # Default angle force constant (kJ/mol/rad²)
+        k_angle = float(kwargs.get('k', 2.0))               # Default angle force constant (kJ/mol/rad²)
         forcegroup = int(kwargs.get('group', 4))  # Default force group
         
         # Convert theta0 to radians (OpenMM expects radians)
@@ -533,16 +533,16 @@ class ForceFieldManager:
         constraint_force.addPerParticleParameter("z_con") 
         constraint_force.setForceGroup(group)
         
-        self.register_force(constraint_force, "MonoPosConstraint")
+        self.register_force(constraint_force, "PosConstraint")
         
     def constrain_monomer_pos(self, mono_id, pos, **kwargs):
         k = kwargs.get('k',50.0)
         forcegroup = kwargs.get('group', 8)
                 
-        if 'MonoPosConstraint' not in self.forceDict.keys(): 
+        if 'PosConstraint' not in self.forceDict.keys(): 
             self._initialize_mono_pos_constraint(forcegroup)
         
-        self.forceDict['MonoPosConstraint'].addParticle(int(mono_id), [float(k), float(pos[0]), float(pos[1]), float(pos[2])])
+        self.forceDict['PosConstraint'].addParticle(int(mono_id), [float(k), float(pos[0]), float(pos[1]), float(pos[2])])
         
     def _initialize_force_z_axis(self, group):
         z_pulling_energy = "- f_z * z + 0.5 * k_xy * ( x * x + y * y )"

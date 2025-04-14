@@ -9,7 +9,7 @@ data_home=/work/cms16/sb95/SAW_globule_extension_const_ext
 # rm -r $data_home
 mkdir -p -v $data_home
 cp -r $code_home/src $data_home
-cp $code_home/scripts/run_rg.py $data_home
+cp $code_home/scripts/run_force_ext_const_ext.py $data_home
 cd $data_home
 for chi in 1.0; do
 for temp in 120 240; do

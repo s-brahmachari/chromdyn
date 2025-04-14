@@ -5,7 +5,7 @@ counter2=0
 out_str=""
 code_home=/home/sb95/ChromatinDynamics
 nrep=8
-data_home=/work/cms16/sb95/SAW_coil_globule
+data_home=/work/cms16/sb95/SAW_stiff_coil_globule
 # rm -r $data_home
 mkdir -p -v $data_home
 cp -r $code_home/src $data_home
