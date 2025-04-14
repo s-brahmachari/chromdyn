@@ -275,3 +275,23 @@ def get_pos_3Drandom_walk(num_steps, step_size):
     positions = np.cumsum(steps, axis=0)  # Cumulative sum for path
     msg = f"Random walk created. Position shape: {positions.shape}"
     return positions, msg  # Shape: (num_steps, 3)
+
+def save_pdb(chrom_dyn_obj, **kwargs):
+    
+    filename = kwargs.get('filename', 
+                          os.path.join(chrom_dyn_obj.output_dir, f"{chrom_dyn_obj.name}_{chrom_dyn_obj.simulation.currentStep}.pdb"))
+    state = chrom_dyn_obj.simulation.context.getState(getPositions=True)
+    data = state.getPositions(asNumpy=True).value_in_unit(unit.nanometer)
+    with open(filename, 'w') as pdb_file:
+        pdb_file.write(f"TITLE     {chrom_dyn_obj.name} - chain 0\n")
+        pdb_file.write(f"MODEL     {chrom_dyn_obj.simulation.currentStep}\n")
+        totalAtom = 1
+        for i, line in enumerate(data):
+            resName = 'GLY'
+            pdb_line = (
+                f"ATOM  {totalAtom:5d}  CA  {resName} A{totalAtom:4d}    "
+                f"{line[0]:8.3f}{line[1]:8.3f}{line[2]:8.3f}  1.00  0.00           C\n"
+            )
+            pdb_file.write(pdb_line)
+            totalAtom += 1
+        pdb_file.write(f"ENDMDL\n")
