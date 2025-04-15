@@ -5,16 +5,16 @@ counter2=0
 out_str=""
 code_home=/home/sb95/ChromatinDynamics
 nrep=12
-data_home=/work/cms16/sb95/SAW_globule_extension_const_force
+data_home=/work/cms16/sb95/SAW_globule_extension_const_force_stiffk10.0
 # rm -r $data_home
 mkdir -p -v $data_home
 cp -r $code_home/src $data_home
-cp $code_home/scripts/run_force_ext_const_force.py $data_home
+cp $code_home/scripts/run_force_ext_const_force_stiff.py $data_home
 cd $data_home
 rm launcher_jobs_sim*
 rm submit_sim_*
 for chi in 1.0; do
-for temp in 360; do
+for temp in 120 240; do
 for N in 500; do
 for fz in $(seq 0.5 0.5 8.2); do
 
@@ -26,9 +26,9 @@ save_folder=$data_home/epsilon_$chi/temp_$temp/N_$N/fz$fz
 # fi
 
 if [[ -z "$out_str" ]]; then
-    out_str=$"python run_force_ext_const_force.py -N ${N} -chi ${chi} -temp ${temp} -Nrep ${nrep} -output ${save_folder} -fz ${fz}"
+    out_str=$"python run_force_ext_const_force_stiff.py -N ${N} -chi ${chi} -temp ${temp} -Nrep ${nrep} -output ${save_folder} -fz ${fz}"
 else
-    out_str+=$'\n'"python run_force_ext_const_force.py -N ${N} -chi ${chi} -temp ${temp} -Nrep ${nrep} -output ${save_folder} -fz ${fz}"
+    out_str+=$'\n'"python run_force_ext_const_force_stiff.py -N ${N} -chi ${chi} -temp ${temp} -Nrep ${nrep} -output ${save_folder} -fz ${fz}"
 fi
 
 ((counter++))

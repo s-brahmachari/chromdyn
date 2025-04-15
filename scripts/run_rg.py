@@ -43,7 +43,7 @@ for replica in range(Nrep):
         )
 
     sim.force_field_manager.add_harmonic_bonds(k=200.0, r0=1.0, group=0)
-    sim.force_field_manager.add_harmonic_angles(k=10.0, theta0=180.0, group=1)
+    # sim.force_field_manager.add_harmonic_angles(k=30.0, theta0=180.0, group=1)
     sim.force_field_manager.add_lennard_jones_force(epsilon=chi, sigma=1.0, group=2)
     # sim.force_field_manager.add_type_to_type_interaction(interaction_matrix, type_labels, mu=2.0, rc=2.0, group=2)
     
@@ -60,7 +60,7 @@ for replica in range(Nrep):
     
     sim.energy_reporter.pause()
     sim.pos_reporter.pause()
-    sim.run(2_000_000) #equilibrate and dont save rg
+    sim.run(4_000_000) #equilibrate and dont save rg
     sim.energy_reporter.resume()
     sim.pos_reporter.resume()
     

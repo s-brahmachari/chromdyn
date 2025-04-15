@@ -5,14 +5,14 @@ counter2=0
 out_str=""
 code_home=/home/sb95/ChromatinDynamics
 nrep=8
-data_home=/work/cms16/sb95/SAW_stiff_coil_globule
+data_home=/work/cms16/sb95/SAW_coil_globule_fixed_temp
 # rm -r $data_home
 mkdir -p -v $data_home
 cp -r $code_home/src $data_home
 cp $code_home/scripts/run_rg.py $data_home
 cd $data_home
-for chi in 1.0; do
-for temp in {60..1000..120}; do
+for chi in $(seq 0.1 0.2 2.0); do
+for temp in 300; do
 for N in 100 200 500 800 1000 2000; do
 
 save_folder=$data_home/epsilon_$chi/temp_$temp/N_$N

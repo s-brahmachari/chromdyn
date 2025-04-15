@@ -29,7 +29,6 @@ fz=float(args.fz)
 generator = TopologyGenerator()
 # By default all monomers have type "A"
 generator.gen_top([N_poly])
-num_blocks = 100
 
 type_labels = ["A", "B"]
 interaction_matrix = [[chi, 0.0], [0.0, 0.0]]
@@ -46,9 +45,9 @@ for replica in range(Nrep):
 
     sim.force_field_manager.add_harmonic_bonds(k=200.0, r0=1.0, group=0)
     sim.force_field_manager.add_lennard_jones_force(epsilon=chi, sigma=1.0, group=1)
-    sim.force_field_manager.constrain_monomer_pos(mono_id=0, k=100.0, pos=[0.0,0.0,0.0], group=2)
+    sim.force_field_manager.constrain_monomer_pos(mono_id=0, k=20.0, pos=[0.0,0.0,0.0], group=2)
     # sim.force_field_manager.constrain_monomer_pos(mono_id=sim.num_particles-1, pos=[0.0,0.0,80.0], group=2, k=10.0)
-    sim.force_field_manager.apply_force_z_axis(mono_id=sim.num_particles-1, fz=fz, group=3)
+    sim.force_field_manager.apply_force_z_axis(mono_id=sim.num_particles-1, fz=fz, k_xy=20.0, group=3)
 
     
     sim.simulation_setup(
@@ -58,17 +57,16 @@ for replica in range(Nrep):
         timestep=0.001,
         save_pos=True,
         save_energy=True,
-        energy_report_interval=10_000,  
-        pos_report_interval=10_000,              
+        energy_report_interval=50_000,  
+        pos_report_interval=50_000,              
         )
     
     sim.energy_reporter.pause()
     sim.pos_reporter.pause()
-    sim.run(5_000_000) #equilibrate and dont save rg
+    sim.run(2_000_000) #equilibrate and dont save rg
     sim.energy_reporter.resume()
     sim.pos_reporter.resume()
     
-    for _ in range(num_blocks):
-        sim.run(20_000)
+    sim.run(2_000_000)
         
     sim.pos_reporter.close()

@@ -14,7 +14,7 @@ parser=argparse.ArgumentParser()
 parser.add_argument('-N',default='200',dest='N_poly', type=int)
 parser.add_argument('-chi',default=1.0,dest='chi', type=float)
 parser.add_argument('-temp',default=120.0,dest='temp', type=float)
-parser.add_argument('-z',default=10.0,dest='z', type=float)
+parser.add_argument('-fz',default=1.0,dest='fz', type=float)
 parser.add_argument('-Nrep',default=1,dest='Nrep', type=int)
 parser.add_argument('-output',default='output',dest='output', type=str)
 
@@ -24,7 +24,7 @@ N_poly = int(args.N_poly)
 chi = float(args.chi)
 temp = float(args.temp)
 Nrep = int(args.Nrep)
-z=float(args.z)
+fz=float(args.fz)
 
 generator = TopologyGenerator()
 # By default all monomers have type "A"
@@ -44,10 +44,10 @@ for replica in range(Nrep):
         )
 
     sim.force_field_manager.add_harmonic_bonds(k=200.0, r0=1.0, group=0)
-    sim.force_field_manager.add_lennard_jones_force(epsilon=chi, sigma=1.0, group=1)
-    sim.force_field_manager.constrain_monomer_pos(mono_id=0, k=100.0, pos=[0.0,0.0,0.0], group=2)
-    sim.force_field_manager.constrain_monomer_pos(mono_id=sim.num_particles-1, k=0.1, pos=[0.0,0.0,z])
-    # sim.force_field_manager.apply_force_z_axis(mono_id=sim.num_particles-1, fz=fz, group=3)
+    sim.force_field_manager.add_harmonic_angles(k=10.0, theta0=180.0, group=1)
+    sim.force_field_manager.add_lennard_jones_force(epsilon=chi, sigma=1.0, group=2)
+    sim.force_field_manager.constrain_monomer_pos(mono_id=0, k=20.0, pos=[0.0,0.0,0.0], group=3)
+    sim.force_field_manager.apply_force_z_axis(mono_id=sim.num_particles-1, fz=fz, k_xy=20.0, group=4)
 
     
     sim.simulation_setup(

@@ -44,10 +44,10 @@ for replica in range(Nrep):
         )
 
     sim.force_field_manager.add_harmonic_bonds(k=200.0, r0=1.0, group=0)
-    sim.force_field_manager.add_lennard_jones_force(epsilon=chi, sigma=1.0, group=1)
-    sim.force_field_manager.constrain_monomer_pos(mono_id=0, k=100.0, pos=[0.0,0.0,0.0], group=2)
+    sim.force_field_manager.add_harmonic_angles(k=10.0, theta0=180.0, group=1)
+    sim.force_field_manager.add_lennard_jones_force(epsilon=chi, sigma=1.0, group=2)
+    sim.force_field_manager.constrain_monomer_pos(mono_id=0, k=100.0, pos=[0.0,0.0,0.0], group=3)
     sim.force_field_manager.constrain_monomer_pos(mono_id=sim.num_particles-1, k=0.1, pos=[0.0,0.0,z])
-    # sim.force_field_manager.apply_force_z_axis(mono_id=sim.num_particles-1, fz=fz, group=3)
 
     
     sim.simulation_setup(
