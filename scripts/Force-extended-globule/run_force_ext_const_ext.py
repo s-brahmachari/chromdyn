@@ -30,9 +30,6 @@ generator = TopologyGenerator()
 # By default all monomers have type "A"
 generator.gen_top([N_poly])
 
-type_labels = ["A", "B"]
-interaction_matrix = [[chi, 0.0], [0.0, 0.0]]
-
 for replica in range(Nrep):
     print(f"Running replica {replica} ... ")
     sim = ChromatinDynamics(

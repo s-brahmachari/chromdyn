@@ -5,7 +5,7 @@ counter2=0
 out_str=""
 code_home=/home/sb95/ChromatinDynamics
 nrep=12
-data_home=/work/cms16/sb95/SAW_globule_extension_const_ext_k0.1
+data_home=/work/cms16/sb95/SAW_globule_extension_const_ext_k0.1_fixed_temp
 # rm -r $data_home
 mkdir -p -v $data_home
 cp -r $code_home/src $data_home
@@ -13,8 +13,8 @@ cp $code_home/scripts/run_force_ext_const_ext.py $data_home
 cd $data_home
 rm launcher_jobs_sim*
 rm submit_sim_*
-for chi in 1.0; do
-for temp in 360; do
+for chi in 1.2 1.5; do
+for temp in 300; do
 for N in 500; do
 for z in 10.0 20.0 30.0 40.0 50.0 70.0 90.0 120.0 150.0 200.0 250.0 300.0 350.0 400.0 450.0 500.0; do
 

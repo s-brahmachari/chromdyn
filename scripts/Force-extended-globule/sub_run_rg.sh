@@ -11,7 +11,9 @@ mkdir -p -v $data_home
 cp -r $code_home/src $data_home
 cp $code_home/scripts/run_rg.py $data_home
 cd $data_home
-for chi in $(seq 0.1 0.2 2.0); do
+rm launcher_jobs_sim*
+rm submit_sim_*
+for chi in 0.002 0.02 0.05; do
 for temp in 300; do
 for N in 100 200 500 800 1000 2000; do
 
