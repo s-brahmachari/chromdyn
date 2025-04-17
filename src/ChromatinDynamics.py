@@ -7,8 +7,7 @@ import openmm.unit as unit
 from Platforms import PlatformManager
 from Integrators import IntegratorManager
 from Forcefield import ForceFieldManager
-from Logger import LogManager
-from Utilities import gen_structure, SaveStructure, StabilityReporter, EnergyReporter
+from Utilities import gen_structure, SaveStructure, StabilityReporter, EnergyReporter, LogManager
 
 class ChromatinDynamics:
     """
@@ -66,45 +65,70 @@ class ChromatinDynamics:
         self.logger.info(f"Simulation set up complete!")
         # self.logger.info("-"*60)
         self.print_force_info()
-        instability_report_file = os.path.join(self.output_dir, self.name+"_stability_report.txt")
-        self.simulation.reporters.append(StabilityReporter(instability_report_file, 
+        self.instability_report_file = os.path.join(self.output_dir, self.name+"_stability_report.txt")
+        self.simulation.reporters.append(StabilityReporter(self.instability_report_file, 
                                                            reportInterval=stability_report_interval, 
                                                            logger=self.logger,
                                                            kinetic_threshold=1e5,
                                                            potential_threshold=1e5)
                                          )
-        self.logger.info(f"Creating Instability report at {instability_report_file}.")
+        self.logger.info(f"Creating Instability report at {self.instability_report_file}.")
             
         if save_energy:
-            energy_report_file = os.path.join(self.output_dir, self.name+"_energy_report.txt")
-            self.energy_reporter = EnergyReporter(energy_report_file, 
+            self.energy_report_file = os.path.join(self.output_dir, self.name+"_energy_report.txt")
+            self.energy_reporter = EnergyReporter(self.energy_report_file, 
                                                   self.force_field_manager, 
                                                   reportInterval=energy_report_interval, 
                                                   reportForceGrp=True,)
             self.simulation.reporters.append(self.energy_reporter)
-            self.logger.info(f"Created Energy reporter at {energy_report_file}.")
+            self.logger.info(f"Created Energy reporter at {self.energy_report_file}.")
         
         if save_pos:
-            position_report_file = os.path.join(self.output_dir, self.name+"_positions.cndb")
-            self.pos_reporter = SaveStructure(position_report_file, 
+            self.pos_report_file = os.path.join(self.output_dir, self.name+"_positions.cndb")
+            self.pos_reporter = SaveStructure(self.pos_report_file, 
                                               reportInterval=pos_report_interval,)
             self.simulation.reporters.append(self.pos_reporter)
-            self.logger.info(f"Created Position reporter at {position_report_file}.")
+            self.logger.info(f"Created Position reporter at {self.pos_report_file}.")
         
-    def run(self, n_steps, verbose=True):
+    def run(self, n_steps, verbose=True, report=True):
         """Runs the simulation and reports performance."""
         if verbose:
             self.logger.info("-"*60)
             self.logger.info(f"Running simulation for {n_steps} steps...")
+        
+        if not report:
+            self.pause_reporters()
+                
         start_time = time.time()
         self.simulation.step(n_steps)
         elapsed = time.time() - start_time
         steps_per_sec = n_steps / elapsed
+        
         if verbose:
             self.logger.info(f"Completed {n_steps} steps in {elapsed:.2f}s ({steps_per_sec:.0f} steps/s)")
             self.logger.info("-"*60)
+            
+        if not report:
+            self.resume_reporters()
+            
         return steps_per_sec
-
+    
+    def pause_reporters(self,):
+        if hasattr(self, 'energy_reporter'):
+            self.energy_reporter.pause()
+        if hasattr(self, 'pos_reporter'):
+            self.pos_reporter.pause()
+            
+    def resume_reporters(self,):
+        if hasattr(self, 'energy_reporter'):
+            self.energy_reporter.resume()
+        if hasattr(self, 'pos_reporter'):
+            self.pos_reporter.resume()
+    
+    def save_reports(self,):
+        if hasattr(self, 'pos_reporter'):
+            self.pos_reporter.close()
+        
     def print_force_info(self):
         """Logs a formatted summary of forces and per-particle energy."""
         system = self.simulation.system

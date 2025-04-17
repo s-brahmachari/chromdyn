@@ -1,5 +1,5 @@
 from openmm import (LangevinIntegrator,BrownianIntegrator, CustomIntegrator)
-from Logger import LogManager
+from Utilities import LogManager
 # -------------------------------------------------------------------
 # Integrator Manager: Creates integrators for Brownian or Langevin dynamics
 # -------------------------------------------------------------------

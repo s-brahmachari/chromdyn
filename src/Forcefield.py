@@ -1,7 +1,7 @@
 from openmm import Discrete2DFunction, HarmonicBondForce, CustomNonbondedForce, CustomExternalForce, CMMotionRemover, CustomBondForce, HarmonicAngleForce
 import numpy as np
 import pandas as pd
-from Logger import LogManager
+from Utilities import LogManager
 
 # -------------------------------------------------------------------
 # ForceField Manager: Sets up polymer forces (e.g., harmonic bonds)
@@ -226,6 +226,53 @@ class ForceFieldManager:
         # Assign the force to the appropriate force group
         restraintForce.setForceGroup(forcegroup)
         self.register_force( restraintForce, "HarmonicTrap")
+
+    def add_flat_bottom_harmonic(self, **kwargs):
+        """
+        Adds a flat-bottom harmonic potential to confine particles inside a spherical boundary.
+        The potential applies no force when particles are inside a radius `r0`, and applies a
+        harmonic force when particles are outside.
+
+        V(r) = step(r - r0) * 0.5 * k * (r - r0)^2
+
+        Args (via kwargs):
+            - k (float): Spring constant of the potential. Default = 5e-3
+            - r0 (float): Radius of the nucleus (or confinement sphere). Default = 10.0
+            - group (int): Force group to assign this force to. Default = 1
+        """
+
+        # ---- Extract parameters with defaults ---- #
+        k = float(kwargs.get('k', 0.1))               # Spring constant
+        r0 = float(kwargs.get('r0', 10.0))             # Nucleus radius
+        center = list(kwargs.get('center', [0.0,0.0,0.0]))
+        forcegroup = int(kwargs.get('group', 1))       # Force group index
+
+        # ---- Log configuration ---- #
+        self.logger.info('-' * 50)
+        self.logger.info(f"Adding Flat-Bottom Harmonic potential with parameters:")
+        self.logger.info(f"k = {k}, r0 = {r0}, group = {forcegroup}")
+
+        # ---- Define energy expression ---- #
+        energy_expr = (
+            "step(r - rRes) * 0.5 * kR * (r - rRes)^2;"
+            "r = sqrt((x - x0)^2 + (y - y0)^2 + (z - z0)^2)"
+        )
+
+        # ---- Create and configure force ---- #
+        restraintForce = CustomExternalForce(energy_expr)
+        restraintForce.setForceGroup(forcegroup)
+        restraintForce.addGlobalParameter('kR', k)
+        restraintForce.addGlobalParameter('rRes', r0)
+        restraintForce.addGlobalParameter('x0', center[0])
+        restraintForce.addGlobalParameter('y0', center[1])
+        restraintForce.addGlobalParameter('z0', center[2])
+
+        # ---- Apply to all particles ---- #
+        for i in range(self.topology.getNumAtoms()):
+            restraintForce.addParticle(i, ())
+
+        # ---- Register force ---- #
+        self.register_force(restraintForce, "FlatBottomHarmonic")
 
     def add_self_avoidance(self, **kwargs):
         """

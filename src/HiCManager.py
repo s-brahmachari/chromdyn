@@ -1,8 +1,10 @@
 import numpy as np
 import os
-from logger import LogManager
+from Utilities import LogManager
 from scipy.ndimage import median_filter, uniform_filter
-from sklearn.preprocessing import normalize
+# from sklearn.preprocessing import normalize
+from scipy.spatial import distance
+import h5py
 
 class HiCManager:
     def __init__(self, logger=None,):
@@ -193,3 +195,75 @@ class HiCManager:
     def check_symmetric(self, a, rtol=1e-05, atol=1e-08):
         return np.allclose(a, a.T, rtol=rtol, atol=atol)
     
+    @staticmethod
+    def _calc_HiC_from_traj_array(traj, mu, rc, p):
+        # print('Computing probability of contact versus contour distance')
+        pol_size=traj.shape[1]
+        Prob = np.zeros((pol_size, pol_size))
+        for ii, snapshot in enumerate(traj):
+            Prob += _calc_prob(snapshot, mu, rc, p)
+        Prob=Prob/(ii+1)
+        return Prob
+
+    def cndb_to_numpy(self, traj_file):
+        self.logger.info('Loading trajectory ...')
+        xyz = []
+        with h5py.File(traj_file,'r') as pos:
+            frame_ids = []
+            for val in pos.keys():
+                try:
+                    step = int(val)
+                    frame_ids.append(step)
+                except (ValueError):
+                    pass
+                    
+            for key in sorted(frame_ids):
+                xyz.append(pos[str(key)])        
+            xyz=np.array(xyz)
+        self.logger.info(f'Trajectory shape: {xyz.shape}')
+        return xyz
+    
+    @staticmethod
+    def _divide_into_subtraj(xyz, num_proc):
+        sub_frames=xyz.shape[0]//num_proc
+        inputs=[xyz[ii*sub_frames:(ii+1)*sub_frames,:,:] for ii in range(num_proc)]
+        return inputs
+    
+    def gen_hic_from_cndb(self, traj_file, mu=2.0, rc=2.0, p=4.0, parallel=True):
+        xyz = self.cndb_to_numpy(traj_file)
+        serialize=False
+        if parallel:
+            try:
+                import multiprocessing
+                num_proc = multiprocessing.cpu_count()
+                if num_proc>xyz.shape[0]: num_proc=xyz.shape[0]
+                subtraj_list = self._divide_into_subtraj(xyz, num_proc)
+                self.logger.info("Using multiprocessing. Dividing into {} processes".format(num_proc))
+                # pool = multiprocessing.Pool()
+                pool = multiprocessing.Pool(processes=num_proc)
+                args_list = [(subtraj, mu, rc, p) for subtraj in subtraj_list]
+                probs=pool.starmap(self._calc_HiC_from_traj_array, args_list)
+                probs=np.array(probs).reshape(num_proc,xyz.shape[1],xyz.shape[1])
+                hic=np.mean(probs,axis=0)
+                self.logger.info(f"Generated HiC matrix of shape: {hic.shape}")
+            except ModuleNotFoundError:
+                self.logger.warning("Module `multiprocessing` not found.")
+                serialize = True
+        else:
+            serialize=True
+        
+        if serialize:
+            self.logger.info("Computing HiC serially...")
+            hic = self._calc_HiC_from_traj_array(xyz, mu, rc, p)
+            self.logger.info(f"Generated HiC matrix of shape: {hic.shape}")
+    
+        return hic
+
+def _calc_prob(data, mu, rc, p):
+    r = distance.cdist(data, data, 'euclidean')
+    f = np.where(
+        r <= rc,
+        0.5 * (1 + np.tanh(mu * (rc - r))),
+        0.5 * (rc / r)**p
+    )
+    return f

@@ -1,78 +1,102 @@
 import numpy as np
 import logging
+import os
 import pandas as pd
+from scipy.spatial import distance
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
-from analyzers import HiCManager
-from ChromatinDynamics import ChromatinDynamics
 
 class EnergyLandscapeOptimizer:
-    def __init__(self):
-        
-        pass
     
-    def loadHiC(self,hicmap, optimizer='hicinv'):
-        hicman = HiCManager(hicmap)
-        
-        if optimizer.lower()=="hicinv":
-            self.optimizer = HiCInversion(hicman.get_hic_map())
-        
-        self.topology = hicman.create_topology()
-        self.hicman = hicman
-    
-    def simulation_setup(self, topology):
-        
-        sim = ChromatinDynamics(topology, integrator='langevin', platform_name="CPU", output_dir=f"output")
-        
-        # Setup system with harmonic trap
-        sim.system_setup(mode='default')
-            
-        # Setup simulation (platform, integrator, positions)
-        sim.simulation_setup()
-        self.sim = sim
-        
-    def run_block(self,):
-        self.sim.run(10000)
-        self.sim.analyzer.print_force_info()
-        # Compute Radius of Gyration (Rg)
-        Rg = self.sim.analyzer.compute_RG()
-        
-    
-class HiCInversion:
-    """
-    A generic optimizer to update interaction matrix (lambda or force field) 
-    based on comparison between experimental and simulated contact matrices.
-    """
+    def __init__(self, method: str = "adam",
+                 eta: float = 0.01, beta1: float = 0.7, beta2: float = 0.9999,
+                 epsilon: float = 1e-8, it: int = 1,
+                 scheduler: str = "none", scheduler_decay: float = 0.1, scheduler_step: int = 100,
+                 scheduler_eta_min: float = 0.001, scheduler_T_max: int = 120):
+        """
+        Initializes the Energy Landscape Optimizer with given hyperparameters and learning rate scheduler.
 
-    def __init__(self, phi_exp: np.ndarray, method: str = "adam",
-                 eta: float = 0.01, beta1: float = 0.7, beta2: float = 0.99999,
-                 epsilon: float = 1e-8, it: int = 1, regularization: float = 0.0):
+        Parameters:
+            mu, rc: Model hyperparameters.
+            method: Optimizer method, e.g., "adam", "nadam", "rmsprop", "adagrad", "sgd".
+            eta: Initial learning rate.
+            beta1, beta2, epsilon: Adam-related hyperparameters.
+            it: Initial iteration counter.
+            error_pca_weight: Weight for regularizing error using PCA.
+            scheduler: Type of learning rate scheduler ("none", "step", "cosine", or "exponential").
+            scheduler_decay: Decay factor (used as lambda for exponential decay, or decay factor for step decay).
+            scheduler_step: Number of iterations per step decay.
+            scheduler_eta_min: Minimum learning rate for the cosine scheduler.
+            scheduler_T_max: Total iterations for cosine annealing.
         """
-        Initialize optimizer with experimental Hi-C data and optimization parameters.
-        
-        Args:
-            phi_exp (np.ndarray): Experimental contact matrix.
-            method (str): Optimization method ('adam', 'rmsprop', 'adagrad', 'sgd').
-            eta (float): Learning rate.
-            beta1 (float): Beta1 parameter for Adam/Nadam.
-            beta2 (float): Beta2 parameter for Adam/Nadam.
-            epsilon (float): Small value to avoid division by zero.
-            it (int): Initial iteration number.
-            regularization (float): Threshold for PCA-based regularization (default 0 = no regularization).
-        """
-        self.phi_exp = phi_exp
-        self.method = method.lower()
-        self.eta = eta
         self.beta1 = beta1
         self.beta2 = beta2
         self.epsilon = epsilon
-        self.t = it
-        self.regularize = regularization
-
-        # Optimization tracking params (for Adam, RMSProp, etc.)
-        shape = phi_exp.shape
+        self.eta0 = eta  # Store the initial learning rate
+        self.eta = eta   # Current learning rate
+        self.t = int(it)
+        self.method = method.lower()
         self.opt_params = {}
+        self.phi_exp = None  # Experimental Hi-C data
+        self.force_field = None
+        self.updated_force_field = None
+        
+        # Learning rate scheduler parameters
+        self.scheduler = scheduler.lower()  # "none", "step", "cosine", or "exponential"
+        self.scheduler_decay = scheduler_decay
+        self.scheduler_step = scheduler_step
+        self.scheduler_eta_min = scheduler_eta_min
+        self.scheduler_T_max = scheduler_T_max
+
+    def update_learning_rate(self) -> None:
+        """Updates the learning rate based on the selected scheduler."""
+        if self.scheduler == "step":
+            # Step decay: Every scheduler_step iterations, multiply by scheduler_decay.
+            factor = self.scheduler_decay ** (self.t // self.scheduler_step)
+            self.eta = self.eta0 * factor
+        elif self.scheduler == "cosine":
+            # Cosine annealing: Gradually decay the learning rate with a cosine schedule.
+            self.eta = self.scheduler_eta_min + 0.5 * (self.eta0 - self.scheduler_eta_min) * \
+                       (1 + np.cos(np.pi * self.t / self.scheduler_T_max))
+        elif self.scheduler == "exponential":
+            # Exponential decay: Learning rate decays as: eta_t = eta0 * exp(-lambda * t)
+            self.eta = self.eta0 * np.exp(-self.scheduler_decay * self.t)
+        # If scheduler is "none", self.eta remains unchanged.
+
+    def load_HiC(self, hic_file: str, cutoff_low: float = 0.0, cutoff_high: float = 1.0, neighbors: int = 0) -> None:
+        """
+        Loads the Hi-C matrix from a text file, applies cutoffs, and initializes optimization parameters.
+        """
+        if not hic_file.endswith('.txt'):
+            raise ValueError("Input Hi-C file should be a TXT file that can be handled by np.loadtxt.")
+
+        hic_mat = np.loadtxt(hic_file)
+        
+        if not self.is_symmetric(hic_mat):
+            raise ValueError("Experimental HiC input is NOT symmetric.")
+        
+        # Apply cutoffs to remove noise
+        hic_mat = np.clip(hic_mat, a_min=cutoff_low, a_max=cutoff_high)
+        
+        # Remove neighbor interactions within the given range
+        neighbor_mask = np.abs(np.subtract.outer(np.arange(len(hic_mat)), np.arange(len(hic_mat)))) <= neighbors
+        hic_mat[neighbor_mask] = 0.0
+
+        self.phi_exp = hic_mat
+        self.mask = hic_mat == 0.0
+        self.init_optimization_params()
+
+    @staticmethod
+    def is_symmetric(mat: np.ndarray, rtol: float = 1e-5, atol: float = 1e-8) -> bool:
+        """Checks if a matrix is symmetric."""
+        return np.allclose(mat, mat.T, rtol=rtol, atol=atol)
+
+    def init_optimization_params(self) -> None:
+        """Initializes optimization parameters for different optimizers."""
+        self.opt_params.clear()
+        shape = self.phi_exp.shape
+
         if self.method in {"adam", "nadam"}:
             self.opt_params["m_dw"] = np.zeros(shape)
             self.opt_params["v_dw"] = np.zeros(shape)
@@ -81,104 +105,70 @@ class HiCInversion:
         elif self.method == "adagrad":
             self.opt_params["G_dw"] = np.zeros(shape)
 
-        self.mask = phi_exp == 0.0  # Mask from experimental data
-
-    def compute_gradient(self, phi_sim: np.ndarray) -> np.ndarray:
-        """
-        Computes gradient of error between experimental and simulated matrices.
+    def update_step(self, grad: np.ndarray, lambda_t: np.ndarray) -> np.ndarray:
+        """Performs an optimization step based on the selected method, updating the learning rate if a scheduler is used."""
+        # Update the learning rate based on the scheduler
+        self.update_learning_rate()
         
-        Args:
-            phi_sim (np.ndarray): Simulated contact matrix.
-            
-        Returns:
-            np.ndarray: Gradient of loss function.
-        """
-        gt = self.phi_exp - phi_sim
-        np.fill_diagonal(gt, 0.0)  # Remove diagonal
-        gt -= np.diagflat(np.diag(gt, k=1), k=1)  # Remove immediate neighbors if needed
-        gt = np.triu(gt) + np.triu(gt).T  # Symmetrize
-
-        # Optional PCA regularization
-        if self.regularize > 0.0:
-            logging.info(f"[INFO] Performing PCA regularization with cutoff {self.regularize}")
-            eig_vals, eig_vecs = np.linalg.eigh(gt)
-            max_eig = eig_vals[-1]
-            for idx, eig in enumerate(eig_vals):
-                if abs(eig / max_eig) < self.regularize:
-                    gt -= eig * np.outer(eig_vecs[:, idx], eig_vecs[:, idx])
-                    logging.info(f"[INFO] Removed eigen component {idx} with eigenvalue {eig:.4e}")
-        
-        return gt
-
-    def update_lambdas(self, current_lambdas: np.ndarray, phi_sim: np.ndarray) -> np.ndarray:
-        """
-        Updates interaction matrix (lambda/force field) using gradient descent method.
-        
-        Args:
-            current_lambdas (np.ndarray): Current lambda matrix.
-            phi_sim (np.ndarray): Simulated contact matrix corresponding to current lambda.
-        
-        Returns:
-            np.ndarray: Updated lambda matrix.
-        """
-        grad = self.compute_gradient(phi_sim)
-
         if self.method in {"adam", "nadam"}:
-            self.opt_params["m_dw"] = self.beta1 * self.opt_params["m_dw"] + (1 - self.beta1) * grad
-            self.opt_params["v_dw"] = self.beta2 * self.opt_params["v_dw"] + (1 - self.beta2) * (grad ** 2)
+            self.opt_params["m_dw"] *= self.beta1
+            self.opt_params["m_dw"] += (1 - self.beta1) * grad
+            self.opt_params["v_dw"] *= self.beta2
+            self.opt_params["v_dw"] += (1 - self.beta2) * (grad ** 2)
 
             m_dw_corr = self.opt_params["m_dw"] / (1 - self.beta1 ** self.t)
             v_dw_corr = self.opt_params["v_dw"] / (1 - self.beta2 ** self.t)
 
             if self.method == "nadam":
-                lookahead = (1 - self.beta1) * grad / (1 - self.beta1 ** self.t)
-                m_dw_corr += lookahead
+                lookahead_gradient = (1 - self.beta1) * grad / (1 - self.beta1 ** self.t)
+                m_dw_corr += lookahead_gradient
 
-            updated_lambda = current_lambdas - self.eta * m_dw_corr / (np.sqrt(v_dw_corr) + self.epsilon)
+            w = lambda_t - self.eta * m_dw_corr / (np.sqrt(v_dw_corr) + self.epsilon)
 
         elif self.method == "rmsprop":
-            self.opt_params["v_dw"] = self.beta1 * self.opt_params["v_dw"] + (1 - self.beta1) * (grad ** 2)
-            updated_lambda = current_lambdas - self.eta * grad / (np.sqrt(self.opt_params["v_dw"]) + self.epsilon)
+            self.opt_params["v_dw"] *= self.beta1
+            self.opt_params["v_dw"] += (1 - self.beta1) * (grad ** 2)
+            w = lambda_t - self.eta * grad / (np.sqrt(self.opt_params["v_dw"]) + self.epsilon)
 
         elif self.method == "adagrad":
             self.opt_params["G_dw"] += grad ** 2
-            updated_lambda = current_lambdas - self.eta * grad / (np.sqrt(self.opt_params["G_dw"]) + self.epsilon)
-
+            w = lambda_t - self.eta * grad / (np.sqrt(self.opt_params["G_dw"]) + self.epsilon)
+        
         elif self.method == "sgd":
-            updated_lambda = current_lambdas - self.eta * grad
+            w = lambda_t - self.eta * grad
 
-        else:
-            raise ValueError(f"Unknown optimization method: {self.method}")
+        self.t += 1
+        return w
 
-        self.t += 1  # Increment iteration count
+    def get_error_gradient(self, phi_sim: np.ndarray) -> np.ndarray:
+        """Calculates the gradient of the optimization objective."""
+        gt = self.phi_exp - phi_sim
+        np.fill_diagonal(gt, 0.0)
+        # gt -= np.diagflat(np.diag(gt, k=1), k=1)
+        gt = np.triu(gt) + np.triu(gt).T  # Ensure symmetry
+        return gt
+
+    # def compute_force_field(self, ff_current: str) -> pd.DataFrame:
+    #     """Computes and updates the force field from the given file."""
+    #     if self.Pi is None or self.NFrames == 0:
+    #         raise ValueError("Contact probability matrix not initialized. Call compute_contact_prob before force field computation.")
+
+    #     self.phi_sim = self.Pi / self.NFrames
+    #     self.phi_sim[self.mask] = 0.0  # Apply the mask to filter out noise
+
+    #     df = pd.read_csv(ff_current, sep=None, engine='python')
+    #     current_force_field = df.values
+    #     self.force_field = current_force_field
+    #     grad = self.get_error_gradient()
+    #     self.updated_force_field = self.update_step(grad)
+
+    #     df_updated_ff = pd.DataFrame(self.updated_force_field, columns=list(df.columns.values))
+    #     self.error = np.sum(np.abs(np.triu(self.phi_sim, k=2) - np.triu(self.phi_exp, k=2))) / np.sum(np.triu(self.phi_exp, k=2))
+    #     return df_updated_ff
+    
+    def get_updated_params(self, lambda_t: np.ndarray, phi_sim: np.ndarray) -> np.ndarray:
+        """Computes and updates the force field from the given file."""
+        grad = self.get_error_gradient(phi_sim)
+        updated_lambda = self.update_step(grad, lambda_t)
+        self.error = np.sum(np.abs(np.triu(phi_sim, k=2) - np.triu(self.phi_exp, k=2))) / np.sum(np.triu(self.phi_exp, k=2))
         return updated_lambda
-
-    def compute_error(self, phi_sim: np.ndarray) -> float:
-        """
-        Computes normalized error between experimental and simulated contact maps.
-        
-        Args:
-            phi_sim (np.ndarray): Simulated contact matrix.
-        
-        Returns:
-            float: Normalized L1 error.
-        """
-        phi_sim[self.mask] = 0.0  # Apply mask
-        error = np.sum(np.abs(np.triu(phi_sim, k=2) - np.triu(self.phi_exp, k=2))) / np.sum(np.triu(self.phi_exp, k=2))
-        return error
-
-    def optimize(self, current_lambdas: np.ndarray, phi_sim: np.ndarray):
-        """
-        Full optimization step: compute gradient, update lambdas, return new lambdas and error.
-        
-        Args:
-            current_lambdas (np.ndarray): Current lambda/interaction matrix.
-            phi_sim (np.ndarray): Simulated contact matrix from current lambdas.
-        
-        Returns:
-            Tuple[np.ndarray, float]: (Updated lambdas, error value)
-        """
-        updated_lambda = self.update_lambdas(current_lambdas, phi_sim)
-        error = self.compute_error(phi_sim)
-        logging.info(f"[INFO] Iteration {self.t} | Error: {error:.5f}")
-        return updated_lambda, error
