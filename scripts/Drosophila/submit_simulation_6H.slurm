@@ -1,6 +1,6 @@
 #!/bin/bash -l
 
-#SBATCH --job-name=dros_lin
+#SBATCH --job-name=dros-0.05
 #SBATCH --account=commons
 #SBATCH --partition=commons
 #SBATCH --nodes=1            # this can be more, up to 22 on aries

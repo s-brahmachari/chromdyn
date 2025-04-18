@@ -77,14 +77,15 @@ class EnergyLandscapeOptimizer:
             raise ValueError("Experimental HiC input is NOT symmetric.")
         
         # Apply cutoffs to remove noise
-        hic_mat = np.clip(hic_mat, a_min=cutoff_low, a_max=cutoff_high)
+        # hic_mat = np.clip(hic_mat, a_min=cutoff_low, a_max=cutoff_high)
         
         # Remove neighbor interactions within the given range
         neighbor_mask = np.abs(np.subtract.outer(np.arange(len(hic_mat)), np.arange(len(hic_mat)))) <= neighbors
         hic_mat[neighbor_mask] = 0.0
-
+        hic_mat[hic_mat>cutoff_high]=0.0
+        hic_mat[hic_mat<cutoff_low]=0.0
         self.phi_exp = hic_mat
-        self.mask = hic_mat == 0.0
+        self.mask = (hic_mat != 0.0)
         self.init_optimization_params()
 
     @staticmethod
@@ -168,6 +169,7 @@ class EnergyLandscapeOptimizer:
     
     def get_updated_params(self, lambda_t: np.ndarray, phi_sim: np.ndarray) -> np.ndarray:
         """Computes and updates the force field from the given file."""
+        phi_sim *= self.mask
         grad = self.get_error_gradient(phi_sim)
         updated_lambda = self.update_step(grad, lambda_t)
         self.error = np.sum(np.abs(np.triu(phi_sim, k=2) - np.triu(self.phi_exp, k=2))) / np.sum(np.triu(self.phi_exp, k=2))

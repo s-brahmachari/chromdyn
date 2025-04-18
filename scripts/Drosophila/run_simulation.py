@@ -49,11 +49,11 @@ type_labels = list(lambda_df.columns.values)
 # assert num_beads == interaction_matrix.shape[0] and len(type_labels) == num_beads
 
 print("Adding forces ...")
-sim.force_field_manager.add_harmonic_bonds(k=30.0, r0=1.0, group=0)
+sim.force_field_manager.add_harmonic_bonds(k=50.0, r0=1.0, group=0)
 sim.force_field_manager.add_self_avoidance(Ecut=4.0, k=5.0, r=0.7, group=1)
 sim.force_field_manager.add_type_to_type_interaction(interaction_matrix, type_labels, 
                                                      mu=mu, rc=rc, group=2)
-sim.force_field_manager.add_flat_bottom_harmonic(k=0.1, r0=20.0, group=3)
+sim.force_field_manager.add_flat_bottom_harmonic(k=0.1, r0=18.0, group=3)
 
 print("Setting up simulation ...")
 sim.simulation_setup(
@@ -63,7 +63,7 @@ sim.simulation_setup(
     timestep=0.01,
     save_pos=True,
     save_energy=True,
-    energy_report_interval=1_500,
+    energy_report_interval=3_000,
     pos_report_interval=1_500,              
     )
 
@@ -73,7 +73,7 @@ sim.run(1_000_000, report=False)
 
 print("Running sim ...")
 for _ in range(10):
-    sim.run(500_000)
+    sim.run(400_000)
     save_pdb(sim)
     print("saved pdb ...")
 
