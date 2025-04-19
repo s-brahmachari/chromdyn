@@ -12,6 +12,8 @@ class TopologyGenerator:
         """
         atoms_per_residue = int(kwargs.get('atoms_per_residue', 1))
         chain_names = kwargs.get('chain_names', [f'C{xx}' for xx in range(1,len(chain_lens)+1)])
+        isRing = kwargs.get('isRing',[0] * len(chain_lens))
+        
         if type(types)==str:
             # check for a filename
             type_file = Path(types)
@@ -54,7 +56,15 @@ class TopologyGenerator:
                 self.topology.addBond(previous_atom, atom)
                 previous_atom = atom
                 kk += 1
-                
+        
+        for idx, chain in enumerate(self.topology.chains()):
+            if isRing[idx]>0:
+                first_atom=list(chain.atoms())[0]
+                last_atom = list(chain.atoms())[-1]
+                self.topology.addBond(first_atom, last_atom)
+            
+        
+        
     def print_top(self, ):
         """
         Writes the generated topology to a formatted output file, with an atom count at the beginning.

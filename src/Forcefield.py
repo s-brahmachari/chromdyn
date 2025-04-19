@@ -273,7 +273,56 @@ class ForceFieldManager:
 
         # ---- Register force ---- #
         self.register_force(restraintForce, "FlatBottomHarmonic")
+    
+    def add_cylindrical_confinement(self, **kwargs):
+        """
+        Adds a cylindrical confinement potential to the system. Particles are confined within
+        a cylinder defined by radius in the xy-plane and height along z. A flat-bottom harmonic
+        potential applies forces only when particles leave the cylindrical bounds.
 
+        Potential:
+            V = step(r_xy - r_cyl) * 0.5 * k_cyl * (r_xy - r_cyl)^2
+            + step(z^2 - z_cyl^2) * 0.5 * k_cyl * (z - z_cyl)^2
+
+        Args (via kwargs):
+            - r_cyl (float): Radius of confinement cylinder in xy-plane (default 5.0)
+            - z_cyl (float): Half-height of confinement cylinder along z (default 10.0)
+            - k_cyl (float): Spring constant of confinement potential (default 30.0)
+            - group (int): Force group index to assign this force to (default 1)
+        """
+
+        # ---- Extract parameters with defaults ---- #
+        r_cyl = float(kwargs.get('r_cyl', 5.0))
+        z_cyl = float(kwargs.get('z_cyl', 10.0))
+        k_cyl = float(kwargs.get('k_cyl', 10.0))
+        forcegroup = int(kwargs.get('group', 1))
+
+        # ---- Log configuration ---- #
+        self.logger.info('-' * 50)
+        self.logger.info("Adding Cylindrical Confinement force:")
+        self.logger.info(f"  r_cyl = {r_cyl}, z_cyl = {z_cyl}, k_cyl = {k_cyl}, group = {forcegroup}")
+
+        # ---- Define potential energy expression ---- #
+        energy_expr = (
+            "step(r_xy - r_cyl) * 0.5 * k_cyl * (r_xy - r_cyl)^2 + "
+            "step(z^2 - z_cyl^2) * 0.5 * k_cyl * (z - z_cyl)^2; "
+            "r_xy = sqrt(x^2 + y^2)"
+        )
+
+        # ---- Create and configure force object ---- #
+        confinement_force = CustomExternalForce(energy_expr)
+        confinement_force.addGlobalParameter('r_cyl', r_cyl)
+        confinement_force.addGlobalParameter('z_cyl', z_cyl)
+        confinement_force.addGlobalParameter('k_cyl', k_cyl)
+        confinement_force.setForceGroup(forcegroup)
+
+        # ---- Add all particles to the force ---- #
+        for i in range(self.topology.getNumAtoms()):
+            confinement_force.addParticle(i, ())
+
+        # ---- Register the force ---- #
+        self.register_force(confinement_force, "CylindricalConfinement")
+        
     def add_self_avoidance(self, **kwargs):
         """
         Adds soft-core self-avoidance with flexible parameters passed via kwargs.

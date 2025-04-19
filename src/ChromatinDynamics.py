@@ -3,7 +3,7 @@ import time
 from openmm import System
 from openmm.app import Simulation
 import openmm.unit as unit
-
+from pathlib import Path
 from Platforms import PlatformManager
 from Integrators import IntegratorManager
 from Forcefield import ForceFieldManager
@@ -17,6 +17,8 @@ class ChromatinDynamics:
 
     def __init__(self, topology, name='ChromatinDynamics', platform_name="CUDA", output_dir="output", console_stream=True):
         
+        self.output_dir = output_dir
+        Path(self.output_dir).mkdir(parents=True, exist_ok=True)
         self.logger = LogManager(log_file=os.path.join(output_dir,name+'.log')).get_logger(__name__, console=console_stream)
         
         self.logger.info('*' * 60)
@@ -25,7 +27,6 @@ class ChromatinDynamics:
         self.name = name
         self.system = System()
         self.topology = topology
-        self.output_dir = output_dir
         self.logger.info(f"Storing output in {self.output_dir}")
         self.num_particles = topology.getNumAtoms()
         for _ in range(self.num_particles):

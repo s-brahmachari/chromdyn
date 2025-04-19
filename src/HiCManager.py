@@ -3,7 +3,7 @@ import os
 from Utilities import LogManager
 from scipy.ndimage import median_filter, uniform_filter
 # from sklearn.preprocessing import normalize
-from scipy.spatial import distance
+from scipy.spatial.distance import pdist, squareform
 import h5py
 
 class HiCManager:
@@ -229,14 +229,14 @@ class HiCManager:
         inputs=[xyz[ii*sub_frames:(ii+1)*sub_frames,:,:] for ii in range(num_proc)]
         return inputs
     
-    def gen_hic_from_cndb(self, traj_file, mu=2.0, rc=2.0, p=4.0, parallel=True):
+    def gen_hic_from_cndb(self, traj_file, mu, rc, p, parallel=True):
         xyz = self.cndb_to_numpy(traj_file)
         serialize=False
         if parallel:
             try:
                 import multiprocessing
                 num_proc = multiprocessing.cpu_count()
-                if num_proc>xyz.shape[0]: num_proc=xyz.shape[0]
+                if num_proc>xyz.shape[0]//100: num_proc=xyz.shape[0]//100
                 subtraj_list = self._divide_into_subtraj(xyz, num_proc)
                 self.logger.info("Using multiprocessing. Dividing into {} processes".format(num_proc))
                 # pool = multiprocessing.Pool()
@@ -260,10 +260,25 @@ class HiCManager:
         return hic
 
 def _calc_prob(data, mu, rc, p):
-    r = distance.cdist(data, data, 'euclidean')
-    f = np.where(
+    # Compute condensed distance matrix
+    r = pdist(data, metric='euclidean')
+    
+    # Compute probabilities for condensed distances
+    f_condensed = np.where(
         r <= rc,
         0.5 * (1 + np.tanh(mu * (rc - r))),
-        0.5 * (rc / r)**p
+        0.5 * (rc / r) ** p
     )
+
+    # Convert to square symmetric matrix with zeros on the diagonal
+    f = squareform(f_condensed)
     return f
+
+# def _calc_prob(data, mu, rc, p):
+#     r = distance.cdist(data, data, 'euclidean')
+#     f = np.where(
+#         r <= rc,
+#         0.5 * (1 + np.tanh(mu * (rc - r))),
+#         0.5 * (rc / r)**p
+#     )
+#     return f

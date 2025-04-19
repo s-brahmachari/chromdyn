@@ -216,7 +216,7 @@ class LogManager:
         logger = logging.getLogger(name)
         logger.setLevel(self.log_level)
         
-        while logger.hasHandlers():
+        while len(logger.handlers)>0:
             logger.handlers.clear()
             
         # Avoid adding multiple handlers if logger already has handlers
