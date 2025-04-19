@@ -10,6 +10,7 @@ class ForceFieldManager:
     def __init__(self, topology, system, logger=None,
                  Nonbonded_cutoff = 3.0,
                  Nonbonded_method = 'NonPeriodic',
+                 exclude_bonds_from_NonBonded = True,
                  ):
         self.logger = logger or LogManager().get_logger(__name__)
         self.topology = topology
@@ -20,10 +21,11 @@ class ForceFieldManager:
             self.Nonbonded_method = CustomNonbondedForce.CutoffNonPeriodic
         self.forceDict = {}
         self.force_name_map = {}
+        self.exclude_bonds_from_NonBonded = exclude_bonds_from_NonBonded
             
     def register_force(self, force_obj, name):
         """Register force with a human-readable name for later reference."""
-        if force_obj.__class__.__name__=="CustomNonbondedForce":
+        if self.exclude_bonds_from_NonBonded==True and force_obj.__class__.__name__=="CustomNonbondedForce":
             force_obj.createExclusionsFromBonds([[int(bond[0].id),int(bond[1].id)] for bond in self.topology.bonds()], 1) 
             self.logger.info("Added exclusions from bonded monomers.")
         force_index = self.system.addForce(force_obj)

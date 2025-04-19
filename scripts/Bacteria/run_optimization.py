@@ -36,7 +36,7 @@ N_replica=3
 assert Path(hic_file).exists(), 'HiC file does not exist!'
 
 #Initialize optimization
-opt = EnergyLandscapeOptimizer(eta=eta, it=1, method='sgd')
+opt = EnergyLandscapeOptimizer(eta=eta, it=1, method='sgd', scheduler='exponential', scheduler_decay=0.1)
 opt.load_HiC(hic_file=hic_file, neighbors=0)
 num_beads = opt.phi_exp.shape[0]
 
@@ -84,6 +84,9 @@ for iteration in range(1, iter_steps+1):
             output_dir=f'output_{iteration}/run_{replica}',
             console_stream=False,
             )
+        
+        print('setting bond exclusions')
+        sim.force_field_manager.exclude_bonds_from_NonBonded=False
         
         print("Adding forces ...")
         sim.force_field_manager.add_harmonic_bonds(k=30.0, r0=1.0, group=0)
