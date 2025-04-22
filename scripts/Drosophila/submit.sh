@@ -6,9 +6,9 @@ dense=/work/cms16/sb95/Drosophila/input_data/${name}.txt
 home='/home/sb95/ChromatinDynamics/scripts/Drosophila/'
 init_lambda='/work/cms16/sb95/Drosophila/input_data/lambda_-0.05'
 
-for eta in 1.5 2.0; 
+for eta in 1.0 1.5 2.0; 
 do
-path=/work/cms16/sb95/Drosophila/${name}_optimize_eta${eta}_init_-0.05_lambda
+path=/work/cms16/sb95/Drosophila/${name}_optimize_eta${eta}_init_-0.05_lambda_exp_scheduler_no_bond_exclusion_NonBonded
 rm -r ${path}
 mkdir -p -v ${path}/input
 

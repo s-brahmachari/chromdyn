@@ -70,13 +70,13 @@ class EnergyLandscapeOptimizer:
             raise ValueError("Experimental HiC input is NOT symmetric.")
         
         # Apply cutoffs to remove noise
-        # hic_mat = np.clip(hic_mat, a_min=cutoff_low, a_max=cutoff_high)
+        hic_mat = np.clip(hic_mat, a_min=cutoff_low, a_max=cutoff_high)
         
         # Remove neighbor interactions within the given range
         neighbor_mask = np.abs(np.subtract.outer(np.arange(len(hic_mat)), np.arange(len(hic_mat)))) <= neighbors
         hic_mat[neighbor_mask] = 0.0
-        hic_mat[hic_mat>cutoff_high]=0.0
-        hic_mat[hic_mat<cutoff_low]=0.0
+        # hic_mat[hic_mat>cutoff_high]=0.0
+        # hic_mat[hic_mat<cutoff_low]=0.0
         self.phi_exp = hic_mat
         self.mask = (hic_mat != 0.0)
         self.init_optimization_params()
