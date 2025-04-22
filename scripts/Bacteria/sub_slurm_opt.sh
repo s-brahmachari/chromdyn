@@ -25,9 +25,9 @@ fi
 echo "Running for $bug $flag"
 
 for zconf in 50.0; do
-for eta in 1.0 0.5; do
+for eta in 1.0; do
 
-data_home="/scratch/sb95/Bacteria_optimization_pow2/sgd/"$bug"/"$flag"/Optimize/Rconf"$rconf"_zconf"$zconf"_eta"$eta"_expScheduler_no_bond_exclusion_NonBonded"
+data_home="/scratch/sb95/Bacteria_optimization_pow2/sgd/"$bug"/"$flag"/Optimize/Rconf"$rconf"_zconf"$zconf"_eta"$eta"_expScheduler_with_bond_exclusion_NonBonded"
 hic_file="/home/sb95/Bacteria_chromosome/hic_maps_experiment/norm/HiC_${bug}_$flag.txt"
 rm -r $data_home
 mkdir -p -v $data_home

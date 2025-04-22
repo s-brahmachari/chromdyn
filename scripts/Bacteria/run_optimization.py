@@ -85,8 +85,8 @@ for iteration in range(1, iter_steps+1):
             console_stream=False,
             )
         
-        print('setting bond exclusions')
-        sim.force_field_manager.exclude_bonds_from_NonBonded=False
+        # print('setting bond exclusions')
+        # sim.force_field_manager.exclude_bonds_from_NonBonded=False
         
         print("Adding forces ...")
         sim.force_field_manager.add_harmonic_bonds(k=30.0, r0=1.0, group=0)
