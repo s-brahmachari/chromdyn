@@ -47,10 +47,10 @@ interaction_matrix = lambda_df.values
 type_labels = list(lambda_df.columns.values)
 # print(type_labels, interaction_matrix.shape)
 # assert num_beads == interaction_matrix.shape[0] and len(type_labels) == num_beads
-print('setting bond exclusions')
-sim.force_field_manager.exclude_bonds_from_NonBonded=False
+# print('setting bond exclusions')
+# sim.force_field_manager.exclude_bonds_from_NonBonded=False
 print("Adding forces ...")
-sim.force_field_manager.add_harmonic_bonds(k=50.0, r0=1.0, group=0)
+sim.force_field_manager.add_harmonic_bonds(k=30.0, r0=1.0, group=0)
 sim.force_field_manager.add_self_avoidance(Ecut=4.0, k=5.0, r=0.7, group=1)
 sim.force_field_manager.add_type_to_type_interaction(interaction_matrix, type_labels, 
                                                      mu=mu, rc=rc, group=2)
