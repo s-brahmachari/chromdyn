@@ -7,7 +7,7 @@ import pandas as pd
 from Topology import TopologyGenerator
 from ChromatinDynamics import ChromatinDynamics
 from HiCManager import HiCManager
-from Utilities import save_pdb
+from Reporters import save_pdb
 import numpy as np
 import time
 import os

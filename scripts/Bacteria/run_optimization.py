@@ -10,7 +10,7 @@ import argparse as arg
 from Topology import TopologyGenerator
 from ChromatinDynamics import ChromatinDynamics
 from HiCManager import HiCManager
-from Utilities import save_pdb
+from Reporters import save_pdb
 import time
 
 parser=arg.ArgumentParser()

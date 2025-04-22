@@ -7,7 +7,8 @@ from pathlib import Path
 from Platforms import PlatformManager
 from Integrators import IntegratorManager
 from Forcefield import ForceFieldManager
-from Utilities import gen_structure, SaveStructure, StabilityReporter, EnergyReporter, LogManager
+from Utilities import gen_structure, LogManager
+from Reporters import SaveStructure, StabilityReporter, EnergyReporter
 
 class ChromatinDynamics:
     """
