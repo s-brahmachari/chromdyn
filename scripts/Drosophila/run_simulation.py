@@ -51,10 +51,11 @@ type_labels = list(lambda_df.columns.values)
 # sim.force_field_manager.exclude_bonds_from_NonBonded=False
 print("Adding forces ...")
 sim.force_field_manager.add_harmonic_bonds(k=30.0, r0=1.0, group=0)
-sim.force_field_manager.add_self_avoidance(Ecut=4.0, k=5.0, r=0.7, group=1)
+sim.force_field_manager.add_harmonic_angles(k=2.0, theta0=180.0, group=1)
+sim.force_field_manager.add_self_avoidance(Ecut=4.0, k=5.0, r=0.7, group=2)
 sim.force_field_manager.add_type_to_type_interaction(interaction_matrix, type_labels, 
-                                                     mu=mu, rc=rc, group=2)
-sim.force_field_manager.add_flat_bottom_harmonic(k=0.1, r0=18.0, group=3)
+                                                     mu=mu, rc=rc, group=3)
+sim.force_field_manager.add_flat_bottom_harmonic(k=0.1, r0=18.0, group=4)
 
 print("Setting up simulation ...")
 sim.simulation_setup(

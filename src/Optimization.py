@@ -1,4 +1,6 @@
 import numpy as np
+from HiCManager import HiCManager
+hicman = HiCManager()
 
 class EnergyLandscapeOptimizer:
     
@@ -57,7 +59,7 @@ class EnergyLandscapeOptimizer:
             self.eta = self.eta0 * np.exp(-self.scheduler_decay * self.t)
         # If scheduler is "none", self.eta remains unchanged.
 
-    def load_HiC(self, hic_file: str, cutoff_low: float = 0.0, cutoff_high: float = 1.0, neighbors: int = 0) -> None:
+    def load_HiC(self, hic_file: str, cutoff_low: float = 0.0, cutoff_high: float = 1.0, neighbors: int = 0, filter: str = 'None') -> None:
         """
         Loads the Hi-C matrix from a text file, applies cutoffs, and initializes optimization parameters.
         """
@@ -69,6 +71,8 @@ class EnergyLandscapeOptimizer:
         if not self.is_symmetric(hic_mat):
             raise ValueError("Experimental HiC input is NOT symmetric.")
         
+        if filter != 'None':
+            hic_mat = hicman.filter_matrix(hic_mat, method=filter)
         # Apply cutoffs to remove noise
         hic_mat = np.clip(hic_mat, a_min=cutoff_low, a_max=cutoff_high)
         

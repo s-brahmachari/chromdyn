@@ -4,11 +4,11 @@ for name in WT dPSQ; do
 iteration='1'
 dense=/work/cms16/sb95/Drosophila/input_data/${name}.txt
 home='/home/sb95/ChromatinDynamics/scripts/Drosophila/'
-init_lambda='/work/cms16/sb95/Drosophila/input_data/lambda_-0.05'
+init_lambda='/work/cms16/sb95/Drosophila/input_data/lambda_-0.1'
 
-for eta in 1.0 1.5 2.0; 
+for eta in 1.0 0.5; 
 do
-path=/work/cms16/sb95/Drosophila/${name}_optimize_eta${eta}_init_-0.05_lambda_exp_scheduler_with_bond_exclusion_NonBonded
+path=/work/cms16/sb95/Drosophila/optimize_with_angles/${name}_optimize_eta${eta}_init_-0.1_lambda_exp_scheduler
 rm -r ${path}
 mkdir -p -v ${path}/input
 

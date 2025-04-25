@@ -36,7 +36,7 @@ assert idx>0, "no HiC could be loaded"
 hic_sim /= idx
 
 opt = EnergyLandscapeOptimizer(eta=eta, it=iteration, method='sgd', scheduler='exponential', scheduler_decay=0.1)
-opt.load_HiC(hic_file=hic_exp_file, neighbors=0)
+opt.load_HiC(hic_file=hic_exp_file, neighbors=0, filter='median')
 num_beads = opt.phi_exp.shape[0]
 
 lambda_t_file = Path(inputFolder) / f"lambda_{str(iteration)}"

@@ -18,7 +18,7 @@ module load foss/2020b Launcher_GPU OpenMPI
 source $HOME/miniforge3/bin/activate
 conda activate openmm-env
 
-max_replicas=$((2*SLURM_NNODES*8))
+max_replicas=$((SLURM_NNODES*8))
 # Controling Launcher and showing some job info
 export LAUNCHER_WORKDIR=`pwd`
 export LAUNCHER_JOB_FILE=$PWD/launcher_jobs_sim
