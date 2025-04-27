@@ -1,6 +1,8 @@
 import numpy as np
 from HiCManager import HiCManager
 hicman = HiCManager()
+import h5py
+from pathlib import Path
 
 class EnergyLandscapeOptimizer:
     
@@ -8,7 +10,7 @@ class EnergyLandscapeOptimizer:
                  eta: float = 0.01, beta1: float = 0.7, beta2: float = 0.9999,
                  epsilon: float = 1e-8, it: int = 1,
                  scheduler: str = "none", scheduler_decay: float = 0.1, scheduler_step: int = 100,
-                 scheduler_eta_min: float = 0.001, scheduler_T_max: int = 120):
+                 scheduler_eta_min: float = 0.001, scheduler_T_max: int = 120, save_dir: str = 'opt_params'):
         """
         Initializes the Energy Landscape Optimizer with given hyperparameters and learning rate scheduler.
 
@@ -32,10 +34,12 @@ class EnergyLandscapeOptimizer:
         self.eta = eta   # Current learning rate
         self.t = int(it)
         self.method = method.lower()
-        self.opt_params = {}
+        self.opt_params = None
         self.phi_exp = None  # Experimental Hi-C data
         self.force_field = None
         self.updated_force_field = None
+        self.save_dir = save_dir
+        Path(self.save_dir).mkdir(parents=True, exist_ok=True)
         
         # Learning rate scheduler parameters
         self.scheduler = scheduler.lower()  # "none", "step", "cosine", or "exponential"
@@ -83,16 +87,34 @@ class EnergyLandscapeOptimizer:
         # hic_mat[hic_mat<cutoff_low]=0.0
         self.phi_exp = hic_mat
         self.mask = (hic_mat != 0.0)
-        self.init_optimization_params()
+        if self.opt_params is None:
+            self.init_optimization_params()
 
     @staticmethod
     def is_symmetric(mat: np.ndarray, rtol: float = 1e-5, atol: float = 1e-8) -> bool:
         """Checks if a matrix is symmetric."""
         return np.allclose(mat, mat.T, rtol=rtol, atol=atol)
 
+    def set_optimization_params(self, params_h5file: str) -> None:
+        self.opt_params = {}
+    
+        with h5py.File(params_h5file, 'r') as h5file:
+            for key in h5file.keys():
+                data = h5file[key][()]
+                # Decode bytes if necessary
+                if isinstance(data, bytes):
+                    data = data.decode('utf-8')
+                self.opt_params[key] = data
+    
+    def save_optimization_params(self) -> None:
+        with h5py.File(str(Path(self.save_dir) / f'params_{self.t}.h5'), 'w') as h5file:
+            for key, value in self.opt_params.items():
+                h5file.create_dataset(key, data=value)
+        
+        
     def init_optimization_params(self) -> None:
         """Initializes optimization parameters for different optimizers."""
-        self.opt_params.clear()
+        self.opt_params = {}
         shape = self.phi_exp.shape
 
         if self.method in {"adam", "nadam"}:
@@ -135,6 +157,7 @@ class EnergyLandscapeOptimizer:
         elif self.method == "sgd":
             w = lambda_t - self.eta * grad
 
+        self.save_optimization_params()
         self.t += 1
         return w
 

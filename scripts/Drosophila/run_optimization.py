@@ -35,8 +35,12 @@ for replica in replica_folders:
 assert idx>0, "no HiC could be loaded"
 hic_sim /= idx
 
-opt = EnergyLandscapeOptimizer(eta=eta, it=iteration, method='sgd', scheduler='exponential', scheduler_decay=0.1)
+opt = EnergyLandscapeOptimizer(eta=eta, it=iteration, method='adam', scheduler='exponential', scheduler_decay=0.01)
 opt.load_HiC(hic_file=hic_exp_file, neighbors=0, filter='median')
+if int(iteration)>1:
+    param_file = f'opt_params/params_{int(iteration)-1}.h5'
+    assert Path(param_file).exists(), 'Param file does not exist'
+    opt.set_optimization_params(param_file)
 num_beads = opt.phi_exp.shape[0]
 
 lambda_t_file = Path(inputFolder) / f"lambda_{str(iteration)}"
