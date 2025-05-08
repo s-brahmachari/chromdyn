@@ -236,7 +236,7 @@ class HiCManager:
             try:
                 import multiprocessing
                 num_proc = multiprocessing.cpu_count()
-                if num_proc>xyz.shape[0]//100: num_proc=xyz.shape[0]//100
+                if num_proc>(1+xyz.shape[0]//100): num_proc=1+xyz.shape[0]//100
                 subtraj_list = self._divide_into_subtraj(xyz, num_proc)
                 self.logger.info("Using multiprocessing. Dividing into {} processes".format(num_proc))
                 # pool = multiprocessing.Pool()
