@@ -109,7 +109,7 @@ class HiCManager:
         return res
     
     def normalize_by_kth_neighbors(self,matrix, k):
-        res = matrix/np.mean(np.diag(matrix,k=k))
+        res = matrix/np.nanmean(np.diag(matrix,k=k))
         return res
     
     def normalize_hic(self, matrix, p2=0.5):
@@ -196,8 +196,8 @@ class HiCManager:
         Ps = []
         Ps_std = []
         for ii in range(hic.shape[0]):
-            Ps.append(np.diag(hic,k=ii).mean())
-            Ps_std.append(np.diag(hic,k=ii).std())
+            Ps.append(np.nanmean(np.diag(hic,k=ii)))
+            Ps_std.append(np.nanstd(np.diag(hic,k=ii)))
         # ax.errorbar(list(range(len(Ps))), Ps, yerr=Ps_std, fmt='.')
         return Ps,Ps_std
     
