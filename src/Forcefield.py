@@ -1,6 +1,7 @@
 from openmm import Discrete2DFunction, HarmonicBondForce, CustomNonbondedForce, CustomExternalForce, CMMotionRemover, CustomBondForce, HarmonicAngleForce
 import numpy as np
 import pandas as pd
+import types
 from Utilities import LogManager
 
 # -------------------------------------------------------------------
@@ -37,7 +38,65 @@ class ForceFieldManager:
     def add_exclusions_from_bonds(self, force):
         for bond in self.topology.bonds():
             force.addExclusion(int(bond[0].id), int(bond[1].id))
-            
+    
+    def _isForceDictEqualSystemForces(self):
+        R""""
+        Internal function that returns True when forces in self.forceDict and in self.system are equal.
+        """
+        forcesInDict = [ x.this for x in self.forceDict.values() ]
+        forcesInSystem = [ x.this for x in self.system.getForces() ]
+
+        if not len(forcesInDict) == len(forcesInSystem):
+            return False
+        else:
+            isEqual = []
+            for i in forcesInDict:
+                isEqual.append((i in forcesInSystem))
+            return all(isEqual)
+    
+    def _getForceIndex(self, forceName):
+        forceIndex = [key for key,item in self.force_name_map.items() if item==forceName][0]
+        return forceIndex
+        
+    def removeForce(self, context, forceName):
+        R""""
+        Remove force from the system.
+        """
+
+        if forceName in self.forceDict:
+            self.system.removeForce(self._getForceIndex(forceName))
+            del self.forceDict[forceName]
+
+            context.reinitialize(preserveState=True) 
+            self.logger.info(f"Removed {forceName} from the system!")
+            assert self._isForceDictEqualSystemForces(), 'Forces in forceDict should be the same as in the system!'
+
+        else:
+            self.logger.warning(f"The system does not have force {forceName}!!")
+            self.logger.warning(f"The forces applied in the system are: {self.forceDict.keys()}")
+            raise ValueError
+        
+    def addLEFBonds(self, anchors, **kwargs):
+        # Extract parameters from kwargs with defaults
+        bond_r = float(kwargs.get('r0', 1.0))  # Default bond length
+        bond_k = float(kwargs.get('k', 10.0))            # Default bond spring constant
+        forcegroup = int(kwargs.get('group', 31))             # Default force group
+        
+        # Logging for transparency
+        # self.logger.info('-'*50)
+        # Create HarmonicBondForce and assign to force group
+        bond_force = HarmonicBondForce()
+        bond_force.setForceGroup(forcegroup)
+        
+        for i, j in anchors:
+            bond_force.addBond(int(i), int(j), bond_r, bond_k)
+        
+        self.logger.info(f"Adding {len(anchors)} unique LEF bonds with parameters:")
+        self.logger.info(f"length: {bond_r}, spring constant (k): {bond_k}, group: {forcegroup}")
+        
+        # Add the force to the system and record in force dictionary
+        self.register_force(bond_force,"LEFBonds")
+        
     def removeCOM(self, **kwargs):
         """
         Removes the center-of-mass (COM) motion from the system using CMMotionRemover.
