@@ -1,13 +1,13 @@
 #!/bin/bash -l
 
-#SBATCH --job-name=dros0Adam
+#SBATCH --job-name=adamnull
 #SBATCH --account=commons
 #SBATCH --partition=commons
 #SBATCH --nodes=1            # this can be more, up to 22 on aries
 #SBATCH --ntasks-per-node=8
 #SBATCH --cpus-per-task=12
 #SBATCH --threads-per-core=1
-#SBATCH --mem-per-cpu=4G
+#SBATCH --mem-per-cpu=32G
 #SBATCH --gres=gpu:8
 #SBATCH --time=6:00:00
 #SBATCH --export=ALL
@@ -47,7 +47,7 @@ date
 
 iteration=$(($iteration+1))
 
-if [ "$iteration" -lt 100 ]; then
+if [ "$iteration" -lt 60 ]; then
     sbatch submit_simulation_6H.slurm ${iteration} ${dense} ${eta}
 fi
 

@@ -5,6 +5,7 @@ import numpy as np
 class TopologyGenerator:
     def __init__(self):
         self.topology = Topology()
+        self.atom_types = None
     
     def gen_top(self, chain_lens, types="A", **kwargs):
         """
@@ -62,7 +63,7 @@ class TopologyGenerator:
                 first_atom=list(chain.atoms())[0]
                 last_atom = list(chain.atoms())[-1]
                 self.topology.addBond(first_atom, last_atom)
-            
+        self.atom_types = atom_types
         
         
     def print_top(self, ):

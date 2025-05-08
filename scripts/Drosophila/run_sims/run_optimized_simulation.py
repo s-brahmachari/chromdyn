@@ -14,11 +14,8 @@ import os
 
 # Parameters from the submission scritps
 rep              = sys.argv[1]
-iteration        = sys.argv[2]
-eta              = float(sys.argv[3])
-
-lambdas          = f"input/lambda_{iteration}"
-folder           = f"output_{iteration}/run_{rep}/"
+lambdas        = sys.argv[2]
+folder           = f"run_{rep}/"
 
 start_time = time.time()
 mu=2.0
@@ -71,11 +68,11 @@ sim.simulation_setup(
 
 print("Running collapse ...")
 #collapse
-sim.run(1_000_000, report=False)
+sim.run(800_000, report=False)
 
 print("Running sim ...")
 for _ in range(10):
-    sim.run(1_000_000)
+    sim.run(100_000)
     save_pdb(sim)
     print("saved pdb ...")
 
@@ -90,6 +87,6 @@ print(f"Time after simulation {elapsed_hours} hours and {elapsed_minutes} minute
 print("Generating HiC from traj ...")
 hicman = HiCManager(logger=sim.logger)
 hic = hicman.gen_hic_from_cndb(traj_file=sim.pos_report_file, mu=mu, rc=rc, p=p, parallel=True)
-np.savetxt(os.path.join(sim.output_dir, f"Pi_{str(iteration)}_{str(rep)}.txt"), hic)
+np.savetxt(os.path.join(sim.output_dir, f"Pi_{str(rep)}.txt"), hic)
 
 print(f"HiC running time: {int(time.time()-sim_time) // 3600} hours {int((time.time()-sim_time)% 3600) // 60} mins")
