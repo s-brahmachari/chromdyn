@@ -194,16 +194,6 @@ class HiCManager:
     
     def check_symmetric(self, a, rtol=1e-05, atol=1e-08):
         return np.allclose(a, a.T, rtol=rtol, atol=atol)
-    
-    @staticmethod
-    def _calc_HiC_from_traj_array(traj, mu, rc, p):
-        # print('Computing probability of contact versus contour distance')
-        pol_size=traj.shape[1]
-        Prob = np.zeros((pol_size, pol_size))
-        for ii, snapshot in enumerate(traj):
-            Prob += _calc_prob(snapshot, mu, rc, p)
-        Prob=Prob/(ii+1)
-        return Prob
 
     def cndb_to_numpy(self, traj_file):
         self.logger.info('Loading trajectory ...')
@@ -235,16 +225,28 @@ class HiCManager:
         if parallel:
             try:
                 import multiprocessing
-                num_proc = multiprocessing.cpu_count()
-                if num_proc>(1+xyz.shape[0]//100): num_proc=1+xyz.shape[0]//100
+                                
+                # Safer multiprocessing start method (avoid memory duplication)
+                multiprocessing.set_start_method("spawn", force=True)
+
+                # Limit processes based on trajectory size
+                num_proc = min(multiprocessing.cpu_count(), 1 + xyz.shape[0] // 300)
+
+                # Split the trajectory BEFORE parallelizing
                 subtraj_list = self._divide_into_subtraj(xyz, num_proc)
-                self.logger.info("Using multiprocessing. Dividing into {} processes".format(num_proc))
-                # pool = multiprocessing.Pool()
-                pool = multiprocessing.Pool(processes=num_proc)
+                self.logger.info(f"Using multiprocessing. Dividing into {num_proc} processes.")
+
+                
                 args_list = [(subtraj, mu, rc, p) for subtraj in subtraj_list]
-                probs=pool.starmap(self._calc_HiC_from_traj_array, args_list)
-                probs=np.array(probs).reshape(num_proc,xyz.shape[1],xyz.shape[1])
-                hic=np.mean(probs,axis=0)
+
+                # Initialize accumulator
+                hic = np.zeros((xyz.shape[1], xyz.shape[1]), dtype=np.float32)
+
+                # Use context manager for clean pool closure
+                with multiprocessing.Pool(processes=num_proc) as pool:
+                    for partial_result in pool.imap_unordered(_wrap_calc, args_list):
+                        hic += partial_result / num_proc  # running average
+
                 self.logger.info(f"Generated HiC matrix of shape: {hic.shape}")
             except ModuleNotFoundError:
                 self.logger.warning("Module `multiprocessing` not found.")
@@ -254,7 +256,7 @@ class HiCManager:
         
         if serialize:
             self.logger.info("Computing HiC serially...")
-            hic = self._calc_HiC_from_traj_array(xyz, mu, rc, p)
+            hic = _calc_HiC_from_traj_array(xyz, mu, rc, p)
             self.logger.info(f"Generated HiC matrix of shape: {hic.shape}")
     
         return hic
@@ -273,6 +275,20 @@ def _calc_prob(data, mu, rc, p):
     # Convert to square symmetric matrix with zeros on the diagonal
     f = squareform(f_condensed)
     return f
+
+# Function to wrap single-call processing (needed for Pool.map)
+def _wrap_calc(subtraj_mu_rc_p):
+    subtraj, mu, rc, p = subtraj_mu_rc_p
+    return _calc_HiC_from_traj_array(subtraj, mu, rc, p).astype(np.float32)
+
+def _calc_HiC_from_traj_array(traj, mu, rc, p):
+    # print('Computing probability of contact versus contour distance')
+    pol_size=traj.shape[1]
+    Prob = np.zeros((pol_size, pol_size))
+    for ii, snapshot in enumerate(traj):
+        Prob += _calc_prob(snapshot, mu, rc, p)
+    Prob=Prob/(ii+1)
+    return Prob
 
 # def _calc_prob(data, mu, rc, p):
 #     r = distance.cdist(data, data, 'euclidean')

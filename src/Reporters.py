@@ -195,13 +195,18 @@ def save_pdb(chrom_dyn_obj, **kwargs):
     with open(filename, 'w') as pdb_file:
         pdb_file.write(f"TITLE     {chrom_dyn_obj.name} - chain 0\n")
         pdb_file.write(f"MODEL     {chrom_dyn_obj.simulation.currentStep}\n")
-        totalAtom = 1
-        for i, line in enumerate(data):
-            resName = 'GLY'
+
+        for i, pos in enumerate(data):
+            atom_serial = i + 1
+            res_name = 'GLY'
+            atom_name = 'CA'
+            chain_id = 'A'
+            res_seq = 1  # or i+1 if each atom is a separate residue
+
             pdb_line = (
-                f"ATOM  {totalAtom:5d}  CA  {resName} A{totalAtom:4d}    "
-                f"{line[0]:8.3f}{line[1]:8.3f}{line[2]:8.3f}  1.00  0.00           C\n"
+                f"ATOM  {atom_serial:5d} {atom_name:^4s} {res_name} {chain_id}{res_seq:4d}    "
+                f"{pos[0]:8.3f}{pos[1]:8.3f}{pos[2]:8.3f}  1.00  0.00           C\n"
             )
             pdb_file.write(pdb_line)
-            totalAtom += 1
+
         pdb_file.write(f"ENDMDL\n")
