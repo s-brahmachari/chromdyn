@@ -35,7 +35,7 @@ for replica in replica_folders:
 assert idx>0, "no HiC could be loaded"
 hic_sim /= idx
 
-opt = EnergyLandscapeOptimizer(eta=eta, it=iteration, method='adam', scheduler='exponential', scheduler_decay=0.01)
+opt = EnergyLandscapeOptimizer(eta=eta, it=iteration, method='sgd', scheduler='exponential', scheduler_decay=0.01)
 opt.load_HiC(hic_file=hic_exp_file, neighbors=0, filter='median')
 if int(iteration)>1:
     param_file = f'opt_params/params_{int(iteration)-1}.h5'

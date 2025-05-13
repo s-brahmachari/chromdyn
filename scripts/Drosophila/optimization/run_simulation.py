@@ -92,7 +92,7 @@ if __name__=="__main__":
     
     print("Generating HiC from traj ...")
     hicman = HiCManager(logger=sim.logger)
-    hic = hicman.gen_hic_from_cndb(traj_file=sim.pos_report_file, mu=mu, rc=rc, p=p, parallel=False)
+    hic = hicman.gen_hic_from_cndb(traj_file=sim.pos_report_file, mu=mu, rc=rc, p=p, parallel=True)
     np.savetxt(os.path.join(sim.output_dir, f"Pi_{str(iteration)}_{str(rep)}.txt"), hic)
 
     print(f"HiC running time: {int(time.time()-sim_time) // 3600} hours {int((time.time()-sim_time)% 3600) // 60} mins")

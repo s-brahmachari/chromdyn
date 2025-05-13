@@ -195,7 +195,7 @@ class HiCManager:
     def check_symmetric(self, a, rtol=1e-05, atol=1e-08):
         return np.allclose(a, a.T, rtol=rtol, atol=atol)
 
-    def cndb_to_numpy(self, traj_file):
+    def cndb_to_numpy(self, traj_file, skip_frames=1):
         self.logger.info('Loading trajectory ...')
         xyz = []
         with h5py.File(traj_file,'r') as pos:
@@ -209,7 +209,7 @@ class HiCManager:
                     
             for key in sorted(frame_ids):
                 xyz.append(pos[str(key)])        
-            xyz=np.array(xyz)
+            xyz=np.array(xyz)[::skip_frames]
         self.logger.info(f'Trajectory shape: {xyz.shape}')
         return xyz
     
@@ -219,8 +219,8 @@ class HiCManager:
         inputs=[xyz[ii*sub_frames:(ii+1)*sub_frames,:,:] for ii in range(num_proc)]
         return inputs
     
-    def gen_hic_from_cndb(self, traj_file, mu, rc, p, parallel=True):
-        xyz = self.cndb_to_numpy(traj_file)
+    def gen_hic_from_cndb(self, traj_file, mu, rc, p, parallel=True, skip_frames=1):
+        xyz = self.cndb_to_numpy(traj_file, skip_frames=skip_frames)
         serialize=False
         if parallel:
             try:
@@ -230,7 +230,8 @@ class HiCManager:
                 multiprocessing.set_start_method("spawn", force=True)
 
                 # Limit processes based on trajectory size
-                num_proc = min(multiprocessing.cpu_count(), 1 + xyz.shape[0] // 300)
+                # num_proc = min(multiprocessing.cpu_count(), 1 + xyz.shape[0] // 10)
+                num_proc = min(multiprocessing.cpu_count(), 32, 1 + xyz.shape[0] // 10)
 
                 # Split the trajectory BEFORE parallelizing
                 subtraj_list = self._divide_into_subtraj(xyz, num_proc)
