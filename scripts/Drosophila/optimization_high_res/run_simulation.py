@@ -60,7 +60,7 @@ sim.force_field_manager.add_flat_bottom_harmonic(k=0.1, r0=35.0, group=4)
 
 print("Setting up simulation ...")
 sim.simulation_setup(
-    init_struct='saw3d',
+    init_struct='randomwalk',
     integrator='langevin',
     temperature=120.0,
     timestep=0.01,

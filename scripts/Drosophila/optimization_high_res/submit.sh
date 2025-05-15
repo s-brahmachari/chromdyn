@@ -4,11 +4,11 @@ for name in WT dPSQ; do
 iteration='1'
 dense=/work/cms16/sb95/Drosophila/input_data/${name}_10k.txt
 home='/home/sb95/ChromatinDynamics/scripts/Drosophila/optimization_high_res'
-init_lambda=/work/cms16/sb95/Drosophila/input_data/lambda_10k_-0.01 #lambda_${name}_opt_10k #
+init_lambda=/work/cms16/sb95/Drosophila/input_data/lambda_10k_-0.05 #lambda_${name}_opt_10k #
 
-for eta in 0.02; 
+for eta in 0.5; 
 do
-path=/work/cms16/sb95/Drosophila/10k/Adam/${name}_optimize_eta${eta}_init_opt_lambda
+path=/work/cms16/sb95/Drosophila/10k/Combined/${name}_optimize_eta${eta}_init_lambda_-0.05
 # rm -r ${path}
 mkdir -p -v ${path}/input
 
@@ -28,5 +28,3 @@ cd ${home}
 
 done
 done
-
-# sbatch submit_simulation.slurm ${iteration} ${dense} ${eta}">${path}/sub_slurm.sh

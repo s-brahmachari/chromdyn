@@ -38,6 +38,7 @@ class EnergyLandscapeOptimizer:
         self.phi_exp = None  # Experimental Hi-C data
         self.force_field = None
         self.updated_force_field = None
+        self.error = None
         self.save_dir = save_dir
         Path(self.save_dir).mkdir(parents=True, exist_ok=True)
         
@@ -61,7 +62,9 @@ class EnergyLandscapeOptimizer:
         elif self.scheduler == "exponential":
             # Exponential decay: Learning rate decays as: eta_t = eta0 * exp(-lambda * t)
             self.eta = self.eta0 * np.exp(-self.scheduler_decay * self.t)
-        # If scheduler is "none", self.eta remains unchanged.
+        elif self.scheduler == 'none':
+            # If scheduler is "none", self.eta remains unchanged.
+            self.eta = self.eta0
 
     def load_HiC(self, hic_file: str, cutoff_low: float = 0.0, cutoff_high: float = 1.0, neighbors: int = 0, filter: str = 'None') -> None:
         """
@@ -107,7 +110,7 @@ class EnergyLandscapeOptimizer:
                 self.opt_params[key] = data
     
     def save_optimization_params(self) -> None:
-        with h5py.File(str(Path(self.save_dir) / f'params_{self.t}.h5'), 'w') as h5file:
+        with h5py.File(str(Path(self.save_dir) / f'{self.method}_params_{self.t}.h5'), 'w') as h5file:
             for key, value in self.opt_params.items():
                 h5file.create_dataset(key, data=value)
         
@@ -169,6 +172,9 @@ class EnergyLandscapeOptimizer:
         gt = np.triu(gt) + np.triu(gt).T  # Ensure symmetry
         return gt
 
+    def set_opt_method(self, method: str) -> None:
+        self.method = method.lower()
+        
     # def compute_force_field(self, ff_current: str) -> pd.DataFrame:
     #     """Computes and updates the force field from the given file."""
     #     if self.Pi is None or self.NFrames == 0:
@@ -192,5 +198,9 @@ class EnergyLandscapeOptimizer:
         phi_sim *= self.mask
         grad = self.get_error_gradient(phi_sim)
         updated_lambda = self.update_step(grad, lambda_t)
-        self.error = np.sum(np.abs(np.triu(phi_sim, k=2) - np.triu(self.phi_exp, k=2))) / np.sum(np.triu(self.phi_exp, k=2))
         return updated_lambda
+    
+    def get_error(self, phi_sim: np.ndarray) -> float:
+        self.error = np.sum(np.abs(np.triu(phi_sim, k=2) - np.triu(self.phi_exp, k=2))) / np.sum(np.triu(self.phi_exp, k=2))
+        return self.error
+        
