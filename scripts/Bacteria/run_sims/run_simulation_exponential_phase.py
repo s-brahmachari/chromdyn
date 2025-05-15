@@ -5,7 +5,6 @@ import sys
 sys.path.append(SRC)
 import numpy as np
 import pandas as pd
-from Optimization import EnergyLandscapeOptimizer
 import argparse as arg
 from Topology import TopologyGenerator
 from ChromatinDynamics import ChromatinDynamics
@@ -58,12 +57,18 @@ ff_chain = np.roll(lambda_df.values, shift, axis=(0,1))
 print("Shifted optimized chain by ", shift)
 
 if rep_len>0:
-    ff_rep = ff_chain[(num_beads-rep_len)//2:(num_beads+rep_len)//2, (num_beads-rep_len)//2:(num_beads+rep_len)//2]
-    foriter1 = ff_chain[(num_beads-rep_len)//2:(num_beads+rep_len)//2,:(num_beads-rep_len)//2]
-    foriter2 = ff_chain[(num_beads+rep_len)//2:,(num_beads-rep_len)//2:(num_beads+rep_len)//2]
-    ne_block = np.vstack((foriter1.T,   inter_ori*np.ones((rep_len, rep_len)),foriter2))
-    ff_exp_phase = np.block([[ff_chain,              ne_block   ],
-                            [np.zeros((rep_len, num_beads)),    ff_rep   ]])
+    start = (num_beads-rep_len)//2
+    end = (num_beads+rep_len)//2
+    ff_rep = ff_chain[start:end, start:end]
+    foriter1 = ff_chain[start:end,:start]
+    foriter2 = ff_chain[end:,start:end]
+    ff_exp_phase = np.zeros(shape=(num_beads+rep_len, num_beads+rep_len))
+    
+    ff_exp_phase[:num_beads, :num_beads] = ff_chain
+    ff_exp_phase[num_beads:, num_beads:] = ff_rep
+    ff_exp_phase[num_beads:, :start] = foriter1
+    ff_exp_phase[num_beads:, start:end] = inter_ori * np.ones(shape=(rep_len, rep_len))
+    ff_exp_phase[num_beads:, end:num_beads] = np.rot90(foriter2, 1)
     ff_exp_phase = np.triu(ff_exp_phase) + np.triu(ff_exp_phase).T
     chain_lens = [num_beads, rep_len]
     chain_names=['M', 'D']

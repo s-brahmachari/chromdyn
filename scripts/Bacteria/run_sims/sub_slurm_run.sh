@@ -1,17 +1,17 @@
 #!/bin/bash -l
 partn="commons"
 acnt="commons"
-code_home="/home/sb95/ChromatinDynamics/scripts/Bacteria"
-for bug in Bsub; do
+code_home="/home/sb95/ChromatinDynamics/scripts/Bacteria/run_sims"
+for bug in Ecoli Bsub; do
 
 if [[ "$bug" == "Ecoli" ]]; then
 rconf=3.0
 rconf_opt=3.0
-oriC=313
+oriC=0 #313
 elif [[ "$bug" == "Bsub" ]]; then
 rconf=2.5
 rconf_opt=2.5
-oriC=202
+oriC=0 #202
 fi
 
 for flag in WT matP mukBmatP dparAB mukB dsmc ; do
@@ -27,19 +27,19 @@ if [[ "$bug" == "Bsub" && ( "$flag" == "mukB" || "$flag" == "matP" || "$flag" ==
 fi
 
 echo "Running for $bug $flag"
-init_ff="/scratch/sb95/Bacteria_optimization_pow2/sgd/"$bug"/"$flag"/Optimize/Rconf"$rconf_opt"_zconf50.0_eta0.5_expScheduler/input/lambda_20"
+init_ff="/scratch/sb95/Bacteria_full_exponential_optimization_pow2/sgd/"$bug"/"$flag"/Optimize/Rconf"$rconf_opt"_zconf50.0_eta0.5_interOri0.0_expScheduler0.1/input/lambda_25_0.0"
 
 for zconf in 50.0; do
 for repfrac in 0.5; do
-for interOri in -0.4; do
+for interOri in -0.5 -0.6; do
 
-data_home="/scratch/sb95/Bacteria_optimization_pow2/sgd/"$bug"/"$flag"/Optimized_runs_eta0.5_expScheduler_lambda20/Rconf"$rconf"_zconf"$zconf"/Rep_frac${repfrac}/interOri${interOri}"
+data_home="/scratch/sb95/Bacteria_full_exponential_optimization_pow2/sgd/"$bug"/"$flag"/Optimized_runs_lambda25/Rconf"$rconf"_zconf"$zconf"/Rep_frac${repfrac}/interOri${interOri}"
 
-rm -r $data_home
+# rm -r $data_home
 mkdir -p -v $data_home
 cd $data_home
 cp -r /home/sb95/ChromatinDynamics/src $data_home
-cp $code_home/run_simulation_exponential_phase.py $data_home
+cp $code_home/run_sim_expon_random_interOri.py $data_home
 
 slurm_run="#!/bin/bash -l
 
@@ -60,7 +60,7 @@ module load Mamba/23.11.0-0
 source /opt/apps/software/Mamba/23.11.0-0/bin/activate
 conda activate /home/sb95/.conda_venv/opmm
 
-python3 run_simulation_exponential_phase.py -rconf $rconf -zconf $zconf -nrep 5 -interOri $interOri -repFrac $repfrac -oriC $oriC -init_ff $init_ff 
+python3 run_sim_expon_random_interOri.py -rconf $rconf -zconf $zconf -nrep 8 -interOri $interOri -repFrac $repfrac -init_ff $init_ff 
 
 "
 runname="sub_opt.slurm"

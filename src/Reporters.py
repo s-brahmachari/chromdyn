@@ -186,27 +186,43 @@ class EnergyReporter:
             self.saveFile.write("\n")
             self.saveFile.flush()
 
+
 def save_pdb(chrom_dyn_obj, **kwargs):
-    
-    filename = kwargs.get('filename', 
-                          os.path.join(chrom_dyn_obj.output_dir, f"{chrom_dyn_obj.name}_{chrom_dyn_obj.simulation.currentStep}.pdb"))
+    filename = kwargs.get(
+        'filename',
+        os.path.join(
+            chrom_dyn_obj.output_dir,
+            f"{chrom_dyn_obj.name}_{chrom_dyn_obj.simulation.currentStep}.pdb"
+        )
+    )
+
+    # Get atomic positions
     state = chrom_dyn_obj.simulation.context.getState(getPositions=True)
-    data = state.getPositions(asNumpy=True).value_in_unit(unit.nanometer)
+    positions = state.getPositions(asNumpy=True).value_in_unit(unit.nanometer)
+    topology = chrom_dyn_obj.topology  # OpenMM Topology
+
     with open(filename, 'w') as pdb_file:
-        pdb_file.write(f"TITLE     {chrom_dyn_obj.name} - chain 0\n")
+        pdb_file.write(f"TITLE     {chrom_dyn_obj.name}\n")
         pdb_file.write(f"MODEL     {chrom_dyn_obj.simulation.currentStep}\n")
 
-        for i, pos in enumerate(data):
-            atom_serial = i + 1
-            res_name = 'GLY'
-            atom_name = 'CA'
-            chain_id = 'A'
-            res_seq = 1  # or i+1 if each atom is a separate residue
+        atom_index = 0
+        for chain in topology.chains():
+            for residue in chain.residues():
+                for atom in residue.atoms():
+                    pos = positions[atom_index]
+                    atom_serial = atom_index + 1
+                    atom_name = 'CA'       # placeholder
+                    res_name = 'GLY'       # placeholder
+                    chain_id = chain.id if chain.id else 'A'
+                    res_seq = int(residue.id) if residue.id else residue.index + 1
+                    element = 'C'          # consistent with 'CA'
 
-            pdb_line = (
-                f"ATOM  {atom_serial:5d} {atom_name:^4s} {res_name} {chain_id}{res_seq:4d}    "
-                f"{pos[0]:8.3f}{pos[1]:8.3f}{pos[2]:8.3f}  1.00  0.00           C\n"
-            )
-            pdb_file.write(pdb_line)
+                    pdb_line = (
+                        f"ATOM  {atom_serial:5d} {atom_name:^4s} {res_name:>3s} {chain_id:1s}"
+                        f"{res_seq:4d}    {pos[0]:8.3f}{pos[1]:8.3f}{pos[2]:8.3f}  "
+                        f"1.00  0.00           {element:>2s}\n"
+                    )
+                    pdb_file.write(pdb_line)
+                    atom_index += 1
 
-        pdb_file.write(f"ENDMDL\n")
+        pdb_file.write("ENDMDL\n")

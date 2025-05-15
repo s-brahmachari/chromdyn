@@ -80,6 +80,30 @@ class HiCManager:
 
         return A_normalized
     
+    def get_flat_matrix(self, mat):
+        """
+        Get the averaged Hi-C map.
+        Normalize pairwise contact frequencies by the average frequency between similarly distant genomic loci.
+        
+        Args:
+            mat (np.ndarray): Input Hi-C contact matrix.
+            tol (float): Tolerance to avoid division by zero, default is 1e-8.
+        
+        Returns:
+            np.ndarray: Averaged Hi-C contact matrix.
+        """
+        avg_mat = np.zeros(mat.shape)
+        
+        # Loop through each diagonal of the matrix
+        for i in range(mat.shape[0]):
+            # Normalize diagonal values by the average frequency and add to avg_mat
+            avg_mat += np.diagflat(np.nanmean(np.diag(mat, k=i)) * np.ones(len(np.diag(mat, k=i))), i)
+
+        # Reflect the upper triangle to the lower triangle to make it symmetric
+        avg_mat = avg_mat.T + np.triu(avg_mat, 1)
+
+        return avg_mat
+    
     def update_kth_neighbor(self,matrix, k, val):
         res = matrix - np.diagflat(np.diag(matrix,k=k),k=k) - np.diagflat(np.diag(matrix,k=-k),k=-k) + np.diagflat(np.ones(len(np.diag(matrix,k=k)))*val,k=k) + np.diagflat(np.ones(len(np.diag(matrix,k=-k)))*val,k=-k) 
         return res
