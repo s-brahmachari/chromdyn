@@ -1,9 +1,9 @@
-import os
 import time
-from openmm import System
-from openmm.app import Simulation
-import openmm.unit as unit
 from pathlib import Path
+from openmm import System
+from openmm.app import Simulation, Topology
+import openmm.unit as unit
+
 from Platforms import PlatformManager
 from Integrators import IntegratorManager
 from Forcefield import ForceFieldManager
@@ -16,127 +16,146 @@ class ChromatinDynamics:
     - System setup, forces, integrators, analysis, and logging.
     """
 
-    def __init__(self, topology, name='ChromatinDynamics', platform_name="CUDA", output_dir="output", console_stream=True):
-        
-        self.output_dir = output_dir
-        Path(self.output_dir).mkdir(parents=True, exist_ok=True)
-        self.logger = LogManager(log_file=os.path.join(output_dir,name+'.log')).get_logger(__name__, console=console_stream)
-        
-        self.logger.info('*' * 60)
-        self.logger.info(f"{'Chromatin Dynamics':^{60}}")
-        self.logger.info('*' * 60)  # Center the title
+    def __init__(self, topology: Topology, name: str = 'ChromatinDynamics', platform_name: str = "CUDA", output_dir: str = "output", console_stream: bool = True, mass: float = 1.0) -> None:
         self.name = name
-        self.system = System()
+        self.output_dir = Path(output_dir)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.logger = LogManager(log_file=self.output_dir / f"{name}.log").get_logger(__name__, console=console_stream)
+
+        self.logger.info("*" * 60)
+        self.logger.info(f"{'Chromatin Dynamics':^60}")
+        self.logger.info("*" * 60)
+
         self.topology = topology
-        self.logger.info(f"Storing output in {self.output_dir}")
+        self.system = System()
         self.num_particles = topology.getNumAtoms()
         for _ in range(self.num_particles):
-            self.system.addParticle(1.0) # adding mass=1.0, modify for virtual particles
-        self.logger.info(f"System initialized with {self.system.getNumParticles()} particles.")
-            
+            self.system.addParticle(mass)
+
+        self.logger.info(f"System initialized with {self.num_particles} particles. Output directory: {self.output_dir}")
+
         self.platform_manager = PlatformManager(platform_name, logger=self.logger)
         self.force_field_manager = ForceFieldManager(self.topology, self.system, logger=self.logger, Nonbonded_cutoff=5.0)
-        self.logger.info('force_field_manager initialized. Use this to add forces to the system before setting up simulation.')
-        self.simulation = None
-        self.logger.info("-"*60)
-    
-    def simulation_setup(self, **kwargs):
-        """Sets up the integrator, platform, context"""
-        
-        init_struct=kwargs.get('init_struct', 'randomwalk')
-        integrator=kwargs.get('integrator', "langevin")
-        temperature=kwargs.get('temperature', 120.0)
-        timestep=kwargs.get('timestep', 0.01)
-        save_pos = kwargs.get('save_pos', True)
-        save_energy = kwargs.get('save_energy', True)
-        stability_report_interval = kwargs.get('stability_report_interval', 500)
-        energy_report_interval = kwargs.get('energy_report_interval', 1000)
-        pos_report_interval = kwargs.get('pos_report_interval', 1000)
-        
-        self.logger.info("-"*60)
-        self.integrator_manager = IntegratorManager(integrator=integrator, temperature=temperature, logger=self.logger, timestep=timestep)
-        self.simulation = Simulation(self.topology, 
-                                     self.system, 
-                                     self.integrator_manager.integrator, 
-                                     self.platform_manager.get_platform())
+        self.logger.info("force_field_manager initialized. Use this to add forces before running setup.")
 
-        self.logger.info("Setting up context...")
+        self.simulation = None
+        self.reporters: dict[str, object] = {}
+
+    def simulation_setup(self,
+                         init_struct: str = 'randomwalk',
+                         integrator: str = 'langevin',
+                         temperature: float = 120.0,
+                         timestep: float = 0.01,
+                         save_pos: bool = True,
+                         save_energy: bool = True,
+                         stability_report_interval: int = 500,
+                         energy_report_interval: int = 1000,
+                         pos_report_interval: int = 1000) -> None:
+        """Sets up the integrator, platform, context, and attaches reporters."""
+
+        self.integrator_manager = IntegratorManager(
+            integrator=integrator,
+            temperature=temperature,
+            logger=self.logger,
+            timestep=timestep
+        )
+
+        self.simulation = Simulation(
+            self.topology,
+            self.system,
+            self.integrator_manager.integrator,
+            self.platform_manager.get_platform()
+        )
+
+        self.logger.info("Setting up simulation context...")
         positions = gen_structure(mode=init_struct, num_steps=self.num_particles, logger=self.logger)
-        # self.logger.info(msg)
         self.simulation.context.setPositions(positions)
-        self.logger.info(f"Simulation set up complete!")
-        # self.logger.info("-"*60)
+        self.logger.info("Simulation context initialized.")
+
         self.print_force_info()
-        self.instability_report_file = os.path.join(self.output_dir, self.name+"_stability_report.txt")
-        self.simulation.reporters.append(StabilityReporter(self.instability_report_file, 
-                                                           reportInterval=stability_report_interval, 
-                                                           logger=self.logger,
-                                                           kinetic_threshold=1e5,
-                                                           potential_threshold=1e5)
-                                         )
-        self.logger.info(f"Creating Instability report at {self.instability_report_file}.")
-            
-        if save_energy:
-            self.energy_report_file = os.path.join(self.output_dir, self.name+"_energy_report.txt")
-            self.energy_reporter = EnergyReporter(self.energy_report_file, 
-                                                  self.force_field_manager, 
-                                                  reportInterval=energy_report_interval, 
-                                                  reportForceGrp=True,)
-            self.simulation.reporters.append(self.energy_reporter)
-            self.logger.info(f"Created Energy reporter at {self.energy_report_file}.")
-        
+
         if save_pos:
-            self.pos_report_file = os.path.join(self.output_dir, self.name+"_positions.cndb")
-            self.pos_reporter = SaveStructure(self.pos_report_file, 
-                                              reportInterval=pos_report_interval,)
-            self.simulation.reporters.append(self.pos_reporter)
-            self.logger.info(f"Created Position reporter at {self.pos_report_file}.")
-        
-    def run(self, n_steps, verbose=True, report=True):
+            path = self.output_dir / f"{self.name}_positions.cndb"
+            self.reporters['position'] = SaveStructure(path, reportInterval=pos_report_interval)
+            self.simulation.reporters.append(self.reporters['position'])
+            self.logger.info(f"Position reporter created: {path}")
+
+        if save_energy:
+            path = self.output_dir / f"{self.name}_energy_report.txt"
+            self.reporters['energy'] = EnergyReporter(
+                path,
+                self.force_field_manager,
+                reportInterval=energy_report_interval,
+                reportForceGrp=True
+            )
+            self.simulation.reporters.append(self.reporters['energy'])
+            self.logger.info(f"Energy reporter created: {path}")
+
+        path = self.output_dir / f"{self.name}_stability_report.txt"
+        self.reporters['stability'] = StabilityReporter(
+            path,
+            reportInterval=stability_report_interval,
+            logger=self.logger,
+            kinetic_threshold=1e5,
+            potential_threshold=1e5
+        )
+        self.simulation.reporters.append(self.reporters['stability'])
+        self.logger.info(f"Stability reporter created: {path}")
+
+    def run(self, n_steps: int, verbose: bool = True, report: bool = True) -> float:
         """Runs the simulation and reports performance."""
+        if not self.simulation:
+            raise RuntimeError("Simulation not initialized. Call simulation_setup() first.")
+
         if verbose:
-            self.logger.info("-"*60)
+            self.logger.info("-" * 60)
             self.logger.info(f"Running simulation for {n_steps} steps...")
-        
+
         if not report:
             self.pause_reporters()
-                
-        start_time = time.time()
-        self.simulation.step(n_steps)
-        elapsed = time.time() - start_time
+
+        start = time.time()
+        try:
+            self.simulation.step(n_steps)
+        except Exception as e:
+            self.logger.error(f"Simulation error: {e}")
+            raise
+
+        elapsed = time.time() - start
         steps_per_sec = n_steps / elapsed
-        
+
         if verbose:
             self.logger.info(f"Completed {n_steps} steps in {elapsed:.2f}s ({steps_per_sec:.0f} steps/s)")
-            self.logger.info("-"*60)
-            
+            self.logger.info("-" * 60)
+
         if not report:
             self.resume_reporters()
-            
+
         return steps_per_sec
-    
-    def pause_reporters(self,):
-        if hasattr(self, 'energy_reporter'):
-            self.energy_reporter.pause()
-        if hasattr(self, 'pos_reporter'):
-            self.pos_reporter.pause()
-            
-    def resume_reporters(self,):
-        if hasattr(self, 'energy_reporter'):
-            self.energy_reporter.resume()
-        if hasattr(self, 'pos_reporter'):
-            self.pos_reporter.resume()
-    
-    def save_reports(self,):
-        if hasattr(self, 'pos_reporter'):
-            self.pos_reporter.close()
-        
-    def print_force_info(self):
+
+    def pause_reporters(self) -> None:
+        for name, reporter in self.reporters.items():
+            if hasattr(reporter, 'pause'):
+                reporter.pause()
+                self.logger.info(f"Paused reporter: {name}")
+
+    def resume_reporters(self) -> None:
+        for name, reporter in self.reporters.items():
+            if hasattr(reporter, 'resume'):
+                reporter.resume()
+                self.logger.info(f"Resumed reporter: {name}")
+
+    def save_reports(self) -> None:
+        if 'position' in self.reporters and hasattr(self.reporters['position'], 'close'):
+            self.reporters['position'].close()
+            self.logger.info("Closed position reporter file.")
+
+    def print_force_info(self) -> None:
         """Logs a formatted summary of forces and per-particle energy."""
-        system = self.simulation.system
         context = self.simulation.context
+        system = self.simulation.system
         num_particles = system.getNumParticles()
-        
+
         self.logger.info("-" * 120)
         self.logger.info(f"{'Index':<6} {'Force Class':<30} {'Force Name':<20} {'Group':<8} "
                          f"{'Particles':<12} {'Bonds':<12} {'Exclusions':<12} {'P.E./Particle':<20}")
@@ -148,7 +167,6 @@ class ChromatinDynamics:
             force_name = self.force_field_manager.force_name_map.get(i, "Unnamed")
             state = context.getState(getEnergy=True, groups={group})
             pot_energy = state.getPotentialEnergy().value_in_unit(unit.kilojoules_per_mole)
-            kin_energy = state.getKineticEnergy().value_in_unit(unit.kilojoules_per_mole)
             per_particle_energy = pot_energy / num_particles if num_particles else 0.0
 
             num_particles_force = getattr(force, 'getNumParticles', lambda: 'N/A')()
@@ -159,12 +177,14 @@ class ChromatinDynamics:
                 f"{i:<6} {force_class:<30} {force_name:<20} {group:<8} "
                 f"{num_particles_force:<12} {num_bonds_force:<12} {num_exclusions:<12} {per_particle_energy:<20.3f}"
             )
-        
-        state = context.getState(getEnergy=True)
-        pot_energy = state.getPotentialEnergy().value_in_unit(unit.kilojoules_per_mole)
-        kin_energy = state.getKineticEnergy().value_in_unit(unit.kilojoules_per_mole)
-        
+
+        total_state = context.getState(getEnergy=True)
+        pot_energy = total_state.getPotentialEnergy().value_in_unit(unit.kilojoules_per_mole)
+        kin_energy = total_state.getKineticEnergy().value_in_unit(unit.kilojoules_per_mole)
+
         self.logger.info("-" * 120)
-        self.logger.info(f"Total number of particles: {num_particles} | K.E. per particle: {kin_energy/self.num_particles:.3f} | P.E. per particle: {pot_energy/self.num_particles:.3f}")
+        self.logger.info(f"Total particles: {num_particles} | K.E./particle: {kin_energy/num_particles:.3f} | P.E./particle: {pot_energy/num_particles:.3f}")
         self.logger.info("-" * 120)
-        
+
+    def __repr__(self) -> str:
+        return f"<ChromatinDynamics(name={self.name}, particles={self.num_particles}, output_dir={self.output_dir})>"
