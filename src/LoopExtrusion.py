@@ -1,7 +1,12 @@
 import numpy as np
+from typing import Any, Dict, Union, List, Tuple, Optional
+import types
+import copy
+import os
+from scipy.spatial import distance
 
-class Extrusion_kinetics():
-    def __init__(self, lef):
+class Extrusion_kinetics:
+    def __init__(self, lef: Any):
         """
         Initialize the Gillespie extrusion object.
 
@@ -11,15 +16,15 @@ class Extrusion_kinetics():
         Returns:
         - None
         """
-        self.lef = lef  # Loop extruder object
-        seed = np.random.randint(100000)
-        self.rng = np.random.default_rng(seed)  # Random number generator
-        self.time = 0  # Initialize time
-        self.dt = 0 
-        self.current_event = {} # initialize empty event dict
+        self.lef: Any = lef  # Loop extruder object
+        seed: int = np.random.randint(100000)
+        self.rng: np.random.Generator = np.random.default_rng(seed)  # Random number generator
+        self.time: float = 0  # Initialize time
+        self.dt: float = 0
+        self.current_event: Dict[str, Any] = {}  # initialize empty event dict
         print("Initialized extrusion kinetics with the random seed ", seed)
 
-    def simulate(self, verbose=False,):
+    def simulate(self, verbose: int = False) -> None:
         """
         Perform a single simulation step.
 
@@ -28,83 +33,43 @@ class Extrusion_kinetics():
         """
         # Gillespie part
         self.create_rate_vec()
-        time = self.get_time_to_next_event()
-        event = self.get_next_event()
+        time: float = self.get_time_to_next_event()
+        event: Dict[str, Any] = self.get_next_event()
         self.current_event = event
         self.dt = time
         self.time += time
-        # print('georgia',time)
         self.lef.save_anchors(self.time)
 
         # Loop extruder part
         self.lef.update_LEs(event, time)
-        
-        if verbose==1:
+
+        if verbose == 1:
             self.print_event(event)
             print(f"Rate vector: {self.rate_vec}")
-            
-            #consistency check
             self.lef.print_latest_event()
-        
-        elif verbose==2:
+
+        elif verbose == 2:
             self.print_event(event)
-            
-    def create_rate_vec_new(self):
+
+    def create_rate_vec(self) -> None:
         """
         Create the rate vector with each LEF leg translocation as independent events.
 
         Returns:
         - None
         """
-        # Generate rate vector for all LEs
-        self.rate_vec = np.array([
+        self.rate_vec: np.ndarray = np.array([
             [
                 self.lef.get_off_rate(key),
-                # self.lef.loop_extruder_dict[key]['k_step_left'],
-                # self.lef.loop_extruder_dict[key]['k_step_right'],
-                (not self.lef.loop_extruder_dict[key]['is_left_anchor_paused']) * self.lef.loop_extruder_dict[key]['k_step_left'],
-                (not self.lef.loop_extruder_dict[key]['is_right_anchor_paused']) * self.lef.loop_extruder_dict[key]['k_step_right'],
-                self.lef.loop_extruder_dict[key]['is_left_anchor_paused'] * self.lef.loop_extruder_dict[key]['is_right_anchor_paused'] * self.lef.loop_extruder_dict[key]["hop_left_factor"] * self.lef.loop_extruder_dict[key]['k_hop_left'],
-                self.lef.loop_extruder_dict[key]['is_right_anchor_paused'] * self.lef.loop_extruder_dict[key]['is_left_anchor_paused'] * self.lef.loop_extruder_dict[key]["hop_right_factor"] * self.lef.loop_extruder_dict[key]['k_hop_right']
+                self.lef.get_step_left_rate(key),
+                self.lef.get_step_right_rate(key),
+                self.lef.get_hop_left_rate(key),
+                self.lef.get_hop_right_rate(key)
             ]
             for key in self.lef.loop_extruder_dict.keys()
         ]).flatten()
 
-        # Generate event matrix for all LEs
-        self.event_matrix = np.array([
-            [
-                {'LE_id': key, 'move_left_anchor': False, 'move_right_anchor': False, 'unbind': True, 'hop_left': False, 'hop_right': False},
-                {'LE_id': key, 'move_left_anchor': True, 'move_right_anchor': False, 'unbind': False, 'hop_left': False, 'hop_right': False},
-                {'LE_id': key, 'move_left_anchor': False, 'move_right_anchor': True, 'unbind': False, 'hop_left': False, 'hop_right': False},
-                {'LE_id': key, 'move_left_anchor': False, 'move_right_anchor': False, 'unbind': False, 'hop_left': True, 'hop_right': False},
-                {'LE_id': key, 'move_left_anchor': False, 'move_right_anchor': False, 'unbind': False, 'hop_left': False, 'hop_right': True}
-            ]
-            for key in self.lef.loop_extruder_dict.keys()
-        ]).flatten()
-        
-    def create_rate_vec(self):
-        """
-        Create the rate vector with each LEF leg translocation as independent events.
-
-        Returns:
-        - None
-        """
-        # Generate rate vector for all LEs
-        self.rate_vec = np.array([
-            [
-                self.lef.loop_extruder_dict[key]["off_rate_factor"] * self.lef.loop_extruder_dict[key]['k_off'],
-                # self.lef.loop_extruder_dict[key]['k_step_left'],
-                # self.lef.loop_extruder_dict[key]['k_step_right'],
-                (not self.lef.loop_extruder_dict[key]['is_left_anchor_paused']) * self.lef.loop_extruder_dict[key]['k_step_left'],
-                (not self.lef.loop_extruder_dict[key]['is_right_anchor_paused']) * self.lef.loop_extruder_dict[key]['k_step_right'],
-                self.lef.loop_extruder_dict[key]['is_left_anchor_paused'] * self.lef.loop_extruder_dict[key]['is_right_anchor_paused'] * self.lef.loop_extruder_dict[key]["hop_left_factor"] * self.lef.loop_extruder_dict[key]['k_hop_left'],
-                self.lef.loop_extruder_dict[key]['is_right_anchor_paused'] * self.lef.loop_extruder_dict[key]['is_left_anchor_paused'] * self.lef.loop_extruder_dict[key]["hop_right_factor"] * self.lef.loop_extruder_dict[key]['k_hop_right']
-            ]
-            for key in self.lef.loop_extruder_dict.keys()
-        ]).flatten()
-
-        # Generate event matrix for all LEs
-        self.event_matrix = np.array([
+        self.event_matrix: np.ndarray = np.array([
             [
                 {'LE_id': key, 'move_left_anchor': False, 'move_right_anchor': False, 'unbind': True, 'hop_left': False, 'hop_right': False},
                 {'LE_id': key, 'move_left_anchor': True, 'move_right_anchor': False, 'unbind': False, 'hop_left': False, 'hop_right': False},
@@ -115,28 +80,28 @@ class Extrusion_kinetics():
             for key in self.lef.loop_extruder_dict.keys()
         ]).flatten()
 
-    def get_time_to_next_event(self):
+    def get_time_to_next_event(self) -> float:
         """
         Return the time to simulate before the next event occurs.
 
         Returns:
         - time_to_next_event: Time to next event
         """
-        mean_time = 1. / self.rate_vec.sum()
-        time_to_next_event = self.rng.exponential(scale=mean_time)
+        mean_time: float = 1. / self.rate_vec.sum()
+        time_to_next_event: float = self.rng.exponential(scale=mean_time)
         return time_to_next_event
 
-    def get_next_event(self):
+    def get_next_event(self) -> Dict[str, Any]:
         """
         Return the id and anchor of the LEF to translocate.
 
         Returns:
         - event_vec: Next event
         """
-        event_vec = self.rng.choice(self.event_matrix, size=1, p=self.rate_vec / self.rate_vec.sum())[0]
+        event_vec: Dict[str, Any] = self.rng.choice(self.event_matrix, size=1, p=self.rate_vec / self.rate_vec.sum())[0]
         return event_vec
-    
-    def print_event(self, event):
+
+    def print_event(self, event: Dict[str, Any]) -> None:
         """
         Extract the event from evenet vector and print 
 
@@ -146,176 +111,161 @@ class Extrusion_kinetics():
         Returns:
         - None
         """
-        leid = event['LE_id']
-        true_events = [key for key, value in event.items() if value is True and key != 'LE_id']
-        dx_left = self.lef.loop_extruder_dict[leid]['left_anchor'] - self.lef.loop_extruder_dict_old[leid]['left_anchor']
-        dx_right = self.lef.loop_extruder_dict[leid]['right_anchor'] - self.lef.loop_extruder_dict_old[leid]['right_anchor']
+        leid: str = event['LE_id']
+        true_events: list[str] = [key for key, value in event.items() if value is True and key != 'LE_id']
+        dx_left: int = self.lef.loop_extruder_dict[leid]['left_anchor'] - self.lef.loop_extruder_dict_old[leid]['left_anchor']
+        dx_right: int = self.lef.loop_extruder_dict[leid]['right_anchor'] - self.lef.loop_extruder_dict_old[leid]['right_anchor']
         print(f"Time: {self.time:<10.6f} | {leid:^10s} {true_events[0]:<20s} | dx_left: {dx_left:<6.0f} | dx_right: {dx_right:<6.0f}")
 
-
-import copy
-import h5py
-import os
-from scipy.spatial import distance
-
 class Loop_Extruders():
-    def __init__(self, 
-                 num_LE, 
-                 chain_topology,
-                 name='LE',
-                 k_off=2e-3, 
-                 stepsize_LE=1.0, 
-                 kstep_LE=0.1,
-                 k_hop=1e-2,
-                 max_hop_len=5,
-                 init_config = [],
-                 diffusion_strengths = [],
-                 temp=0.0,
-                 hop3D = False,
-                 sim3D = None,
-                 dist_cutoff=1.5,
-                 preferential_loading=0.0,
-                 loading_sites=[],
-                 t_mesh = 0.001,
-                 tau = 1e6,
-                 v_LE = 5.0,
-                 k_LE = 30.0,
-                 f_stall=50.0,
-                 ):
-        
-        """
-        Initialize the loop extruder class
-        """
+    
+    def __init__(
+        self,
+        num_LE: int,
+        topology: Union[List[Tuple[int, int]], object],
+        name: str = 'LE',
+        k_off: float = 2e-3,
+        stepsize_LE: float = 1.0,
+        kstep_LE: float = 0.1,
+        k_hop: float = 1e-2,
+        max_hop_len: int = 5,
+        init_config: Optional[List[Tuple[int, int]]] = None,
+        diffusion_strengths: Optional[List[float]] = None,
+        temp: float = 0.0,
+        hop3D: bool = False,
+        sim3D: Optional[object] = None,
+        dist_cutoff: float = 1.5,
+        preferential_loading: Union[float, bool] = 0.0,
+        loading_sites: Optional[List[int]] = None,
+        t_mesh: float = 0.001,
+        tau: float = 1e6,
+        v_LE: float = 5.0,
+        k_LE: float = 30.0,
+        f_stall: float = 50.0,
+    ):
         self.name = name
-        seed = np.random.randint(100000000)
-        self.rng = np.random.default_rng(seed)  # Random number generator
-        print("Random seed", seed)
+        self.num_LE = num_LE
+        self._initialize_rng()
         self.temp = temp
         self.hop3D = hop3D
-        assert type(self.hop3D)==bool, "hop3D is a boolean parameter!"
-        if self.hop3D: 
-            assert sim3D != None, 'For 3D hopping polymer (OpenMiChroM object) needs to be specified!'
         self.sim3D = sim3D
+        self.dist_cutoff = dist_cutoff
+        self._validate_hop3D()
+        self._initialize_LE_params(k_LE, f_stall, k_off, kstep_LE, stepsize_LE, k_hop, tau, v_LE, t_mesh, max_hop_len, diffusion_strengths)
+        self._initialize_topology(topology)
+        self._initialize_loading(preferential_loading, loading_sites)
+        self._initialize_LE_structures()
+        self._initialize_blockers()
+        self._place_LEs(init_config)
+        self._backup_LE_state()
+        self.save_anchors(time=0.0)
+
+    def _initialize_rng(self) -> None:
+        seed = np.random.randint(100000000)
+        self.rng = np.random.default_rng(seed)
+        print("Random seed", seed)
+
+    def _validate_hop3D(self) -> None:
+        if not isinstance(self.hop3D, bool):
+            raise TypeError("hop3D must be a boolean.")
+        if self.hop3D and self.sim3D is None:
+            raise ValueError("For 3D hopping, sim3D must be provided.")
+
+    def _initialize_LE_params(self, k_LE, f_stall, k_off, kstep_LE, stepsize_LE, 
+                              k_hop, tau, v_LE, t_mesh, max_hop_len,  diffusion_strengths) -> None:
+        self.max_hop_len = max_hop_len
         self.k_LE = k_LE
         self.f_stall = f_stall
-        self.dist_cutoff = dist_cutoff
+        self.k_off = k_off
+        self.k_hop = k_hop
+        self.kstep_LE = kstep_LE
+        self.stepsize_LE = stepsize_LE
+        self.tau = tau
+        self.v_LE = v_LE
+        self.t_mesh = t_mesh
+        self.drag = 1.0
+        if diffusion_strengths is None:
+            diffusion_strengths = [1.0 for _ in range(self.num_LE)]
+        if len(diffusion_strengths) != self.num_LE:
+            raise ValueError("Diffusion strengths must be a list with length equal to num_LE.")
+        self.diffusion_strengths = diffusion_strengths
         
-        if len(diffusion_strengths)==0:
-            diffusion_strengths = [1.0 for _ in range(num_LE)] 
-        
-        assert len(diffusion_strengths)==num_LE, 'Diffusion strengths should be a list of dimension equal to num_LE'
-        
-        #maximum no of bound LEs
-        self.num_LE = num_LE
-        self.max_hop_len = max_hop_len
-
-        # set the chain for extrusion
-        # chains = [(initial mono, final mono, is Ring)]
-        self.topology = chain_topology
-        
-        #LEs stall at the ends or fall off
         self.stall_at_ends = False
-        self.unbind_at_end =  False
-        
-        #variable to be set to 1 when things go wrong
+        self.unbind_at_end = False
         self.implement_CTCF_orientation = False
         self.ctcf_hop_factor = 1.0
         self.ctcf_off_rate_factor = 1.0
-        
-        #LE kinetic parameters
-        self.k_off = k_off
-        self.k_hop = k_hop
-        self.drag = 1.0
-        self.tau = tau
-        
-        self.kstep_LE = kstep_LE
-        self.stepsize_LE = stepsize_LE
-        #velocity
-        self.v_LE = v_LE #self.stepsize_LE * self.kstep_LE
-        self.t_mesh = t_mesh
-        
-        #preferential loading sites
-        if preferential_loading==True:
-            preferential_loading=1.0
-        elif preferential_loading==False:
-            preferential_loading=0.0
-            
-        assert 1.0>=float(preferential_loading)>=0.0, 'Preferential loading parameter not a float between 0 and 1. This parameter encodes the degree of preferntial loading at given loading sites'
-        
-        if preferential_loading>0.0: 
-            assert len(loading_sites)>0 , 'Preferential loading is ON but no loading sites provided. Use loading_sites list.'
-        
-        self.preferential_LE_loading = preferential_loading
-        self.preferential_loading_sites = loading_sites
 
+    def _initialize_topology(self, topology: Union[List[Tuple[int, int]], object],) -> None:
+        if type(topology)==List:
+            # assume topology=[(chain1_start, chain1_end), ... ]
+            self.chains = topology
+        else:
+            #assume openmm topology object
+            self.chains = [(int(list(xx.atoms())[0].id) ,int(list(xx.atoms())[-1].id)) 
+                           for xx in list(topology.chains())]
+
+    def _initialize_loading(self, preferential_loading: Union[float, bool], loading_sites: Optional[List[int]]) -> None:
+        preferential_loading = float(preferential_loading)
+        if not (0.0 <= preferential_loading <= 1.0):
+            raise ValueError("Preferential loading must be between 0.0 and 1.0.")
+
+        if preferential_loading > 0.0:
+            assert loading_sites is not None and len(loading_sites)>0 , 'Preferential loading is ON but no loading sites provided. Use loading_sites list.'
+        self.preferential_LE_loading = preferential_loading
+        self.preferential_loading_sites = loading_sites or []
+
+    def _initialize_LE_structures(self) -> None:
         self.current_LE = -1
         self.LE_steps = []
-        
+        self.loop_extuder_3Dneighbors = {f'LE_{i}': [] for i in range(self.num_LE)}
+        self.loop_extruder_dict = {
+            f'LE_{i}': {
+                'left_anchor': 0, 'right_anchor': 1, 'bond_index': -1, 'bound_time': 0.0,
+                'is_left_anchor_paused': False, 'is_right_anchor_paused': False,
+                'left_anchor_paused_time': 0.0, 'right_anchor_paused_time': 0.0, 'both_anchors_paused_time': 0.0,
+                'k_step_left': self.kstep_LE, 'k_step_right': self.kstep_LE,
+                'v_left_anchor': self.v_LE, 'v_right_anchor': self.v_LE,
+                'hop_left_factor': 1.0, 'hop_right_factor': 1.0,
+                'off_rate_factor': 1.0,
+                'k_off': self.k_off, 'k_hop_left': self.k_hop, 'k_hop_right': self.k_hop,
+                'left_anchor_paused_at': -1, 'right_anchor_paused_at': -1,
+                'left_anchor_paused_by': ['None', 'None'], 'right_anchor_paused_by': ['None', 'None'],
+                'active_force_left': self.v_LE * self.drag, 'active_force_right': self.v_LE * self.drag,
+                'corr_time': self.tau, 'resisting_force': 0.0, 'strain': [0.0],
+                'diffusion_strength': self.diffusion_strengths[i]
+            }
+            for i in range(self.num_LE)
+        }
 
-        self.loop_extuder_3Dneighbors = {f'LE_{le_i}':[] for le_i in range(self.num_LE)}
-
-        self.loop_extruder_dict = {f'LE_{le_i}':{'left_anchor': 0, 
-                                                 'right_anchor': 1,
-                                                 'bond_index': -1, 
-                                                 'bound_time': 0.0, 
-                                                 'is_left_anchor_paused': False, 
-                                                 'is_right_anchor_paused': False, 
-                                                 'left_anchor_paused_time': 0.0, 
-                                                 'right_anchor_paused_time': 0.0,
-                                                 'both_anchors_paused_time': 0.0,
-                                                 'k_step_left': self.kstep_LE, 
-                                                 'k_step_right': self.kstep_LE,
-                                                 'v_left_anchor': self.v_LE, 
-                                                 'v_right_anchor': self.v_LE,
-                                                 'hop_left_factor': 1.0, 
-                                                 'hop_right_factor': 1.0,
-                                                 'off_rate_factor': 1.0,
-                                                 'k_off': self.k_off, 
-                                                 'k_hop_left': self.k_hop, 
-                                                 'k_hop_right': self.k_hop, 
-                                                 'left_anchor_paused_at': -1, 
-                                                 'right_anchor_paused_at': -1, 
-                                                 'left_anchor_paused_by': ['None', 'None'], 
-                                                 'right_anchor_paused_by': ['None', 'None'],
-                                                 'active_force_left': self.v_LE*self.drag,
-                                                 'active_force_right': self.v_LE*self.drag,
-                                                 'corr_time': self.tau,
-                                                 'resisting_force': 0.0,
-                                                 'strain':[0.0],
-                                                 'diffusion_strength': diffusion_strengths[le_i]} 
-                                   for le_i in range(self.num_LE)}
-
-        self.mobile_blockers = [0]*self.num_LE + [1]*self.num_LE 
-        self.immobile_blockers = {}
-        all_chains = list(self.topology.chains())
-        for chain in all_chains:
-            self.immobile_blockers[int(list(chain.atoms())[0].id)]= {'type':'End','orientation':'left'}
-            self.immobile_blockers[int(list(chain.atoms())[-1].id)]= {'type':'End','orientation':'right'}
-
-        self.chain_start = int(list(all_chains[0].atoms())[0].id)
-        self.chain_end = int(list(all_chains[-1].atoms())[-1].id)
-
-        if len(init_config)==0:
-            #loop over all LEs and bind them to free sites
+    def _place_LEs(self, init_config: Optional[List[Tuple[int, int]]]) -> None:
+        if init_config is None or len(init_config) == 0:
             print("Randomly distributing the LEFs")
-            
-            for LE_id in self.loop_extruder_dict.keys():
-                left_anchor, right_anchor = self.find_random_binding_site()
-                self.set_LE_left_anchor(LE_id, left_anchor, -1)
-                self.set_LE_right_anchor(LE_id, right_anchor, -1)
+            for LE_id in self.loop_extruder_dict:
+                left, right = self.find_random_binding_site()
+                self.set_LE_left_anchor(LE_id, left, -1)
+                self.set_LE_right_anchor(LE_id, right, -1)
         else:
-            assert len(init_config)==num_LE, "conflict between init_config and num_LE!"
-            for jj, LE_id in enumerate(self.loop_extruder_dict.keys()):
-                left_anchor, right_anchor = init_config[jj]
-                self.set_LE_left_anchor(LE_id, left_anchor, -1)
-                self.set_LE_right_anchor(LE_id, right_anchor, -1)
-            # self.set_LE_position(LE_id=id , new_anchors=anchors)
-        #initialize immobile blockers
-        
-        
-        # back up loop extruder dict to store the previous state
+            if len(init_config) != self.num_LE:
+                raise ValueError("init_config length must match num_LE.")
+            for i, LE_id in enumerate(self.loop_extruder_dict):
+                left, right = init_config[i]
+                self.set_LE_left_anchor(LE_id, left, -1)
+                self.set_LE_right_anchor(LE_id, right, -1)
+
+    def _initialize_blockers(self) -> None:
+        self.mobile_blockers = [0] * self.num_LE + [1] * self.num_LE
+        self.immobile_blockers = {}
+        for chain in self.chains:
+            start = int(chain[0])
+            end = int(chain[1])
+            self.immobile_blockers[start]= {'type':'End','orientation':'left'}
+            self.immobile_blockers[end]= {'type':'End','orientation':'right'}
+        self.first_mono = int(self.chains[0][0])
+        self.last_mono = int(self.chains[-1][1])
+
+    def _backup_LE_state(self) -> None:
         self.loop_extruder_dict_old = copy.deepcopy(self.loop_extruder_dict)
-        self.save_anchors(0.0)
         
     def find_random_binding_site(self,):
         """
@@ -325,7 +275,7 @@ class Loop_Extruders():
         maxiter=0
         while keep_searching:
             maxiter += 1
-            anchor_i = self.rng.choice(range(self.chain_start+1, self.chain_end-1))
+            anchor_i = self.rng.choice(range(self.first_mono+1, self.last_mono-1))
             if self.free_for_binding(anchor_i) and self.free_for_binding(anchor_i+1): 
                 keep_searching = False
                 new_anchors = (anchor_i, anchor_i+1)
@@ -336,7 +286,25 @@ class Loop_Extruders():
 
     def get_off_rate(self, leid):
         return self.loop_extruder_dict[leid]["off_rate_factor"] * self.loop_extruder_dict[leid]['k_off']
-        
+    
+    def get_step_left_rate(self, leid):
+        is_paused = self.loop_extruder_dict[leid]['is_left_anchor_paused']
+        return (not is_paused) * self.loop_extruder_dict[leid]['k_step_left']
+    
+    def get_step_right_rate(self, leid):
+        is_paused = self.loop_extruder_dict[leid]['is_right_anchor_paused']
+        return (not is_paused) * self.loop_extruder_dict[leid]['k_step_right']
+    
+    def get_hop_left_rate(self, leid):
+        is_paused = self.loop_extruder_dict[leid]['is_left_anchor_paused'] * self.loop_extruder_dict[leid]['is_right_anchor_paused']
+        factor = self.loop_extruder_dict[leid]["hop_left_factor"] 
+        return is_paused * factor * self.loop_extruder_dict[leid]['k_hop_left']
+
+    def get_hop_right_rate(self, leid):
+        is_paused = self.loop_extruder_dict[leid]['is_left_anchor_paused'] * self.loop_extruder_dict[leid]['is_right_anchor_paused']
+        factor = self.loop_extruder_dict[leid]["hop_right_factor"] 
+        return is_paused * factor * self.loop_extruder_dict[leid]['k_hop_right']
+    
     def find_preferential_loading_site(self,):
         keep_searching = True
         search_distance = 5
@@ -360,7 +328,7 @@ class Loop_Extruders():
         """
         Checks if the monomer is within the chain. Returns True when inside the chain
         """
-        return (self.chain_end>=int(mono)>=self.chain_start)
+        return (self.last_mono>=int(mono)>=self.first_mono)
     
     def is_site_unoccupied(self, mono):
         """
@@ -682,7 +650,8 @@ class Loop_Extruders():
     
     def update_LE_resisting_force(self,leids, anchor_locs):
         # print(leids, anchor_locs)
-        coords = self.sim3D.state.getPositions(asNumpy=True)
+        state = self.sim3D.simulation.context.getState(getPositions=True)
+        coords = state.getPositions(asNumpy=True)
         for xx,leid in enumerate(leids):
             left_anchor_pos = coords[int(anchor_locs[xx][0]),:]
             right_anchor_pos = coords[int(anchor_locs[xx][1]),:]
