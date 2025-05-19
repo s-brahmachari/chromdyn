@@ -214,7 +214,7 @@ def save_pdb(chrom_dyn_obj, **kwargs):
                     atom_name = 'CA'       # placeholder
                     res_name = 'GLY'       # placeholder
                     chain_id = chain.id if chain.id else 'A'
-                    res_seq = int(residue.id) if residue.id else residue.index + 1
+                    res_seq = 1 #int(residue.id) if residue.id else residue.index + 1
                     element = 'C'          # consistent with 'CA'
 
                     pdb_line = (

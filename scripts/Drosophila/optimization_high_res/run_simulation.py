@@ -27,7 +27,7 @@ p=4
 print("Generating Topology ...")
 # chain_lens = [471, 977, 1205, 27]
 chain_lens = [2355, 4881, 6020, 135]
-chain_names=['chrX','chr2','chr3','chr4']
+chain_names=['X','2','3','4']
 # assert sum(chain_lens)==num_beads, 'hic file does not have same dimension as chain_lens'
 generator = TopologyGenerator()
 generator.gen_top(chain_lens=chain_lens, chain_names=chain_names, types="unique")

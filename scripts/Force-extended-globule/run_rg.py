@@ -58,12 +58,8 @@ for replica in range(Nrep):
         pos_report_interval=10_000,              
         )
     
-    sim.energy_reporter.pause()
-    sim.pos_reporter.pause()
-    sim.run(4_000_000) #equilibrate and dont save rg
-    sim.energy_reporter.resume()
-    sim.pos_reporter.resume()
-    
+    sim.run(1_000_000, report=False) #equilibrate and dont save rg
+
     for _ in range(num_blocks):
         sim.run(10_000)
         
