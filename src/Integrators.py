@@ -1,4 +1,4 @@
-from openmm import (LangevinIntegrator,BrownianIntegrator, CustomIntegrator)
+from openmm import (LangevinIntegrator,BrownianIntegrator, CustomIntegrator, Integrator)
 from Utilities import LogManager
 # -------------------------------------------------------------------
 # Integrator Manager: Creates integrators for Brownian or Langevin dynamics
@@ -13,7 +13,7 @@ class IntegratorManager:
         "Fact": 0.0  # Placeholder if needed in future
     }
 
-    def __init__(self, logger=None, **kwargs):
+    def __init__(self, logger=None, integrator='langevin', **kwargs):
         """
         Initialize the IntegratorManager with flexible parameters.
 
@@ -23,18 +23,23 @@ class IntegratorManager:
             **kwargs: Optional parameters (temperature, friction, timestep, tcorr, Fact).
         """
         self.logger = logger or LogManager().get_logger(__name__)
-        self.integrator_name = kwargs.get('integrator', 'langevin')
-        # self.logger.info('-'*60)
-        # Load parameters with defaults
-        self.temperature = kwargs.get("temperature", self.DEFAULT_PARAMS["temperature"])
-        self.friction = kwargs.get("friction", self.DEFAULT_PARAMS["friction"])
-        self.timestep = kwargs.get("timestep", self.DEFAULT_PARAMS["timestep"])
-        self.tcorr = kwargs.get("tcorr", self.DEFAULT_PARAMS["tcorr"])
-        self.Fact = kwargs.get("Fact", self.DEFAULT_PARAMS["Fact"])
+        self.logger.info(f"Creating integrator ...")
+        if isinstance(integrator, str):
+            assert integrator in self.VALID_INTEGRATORS, 'integrator name does not exist' 
+            self.integrator_name = integrator
 
-        # Log initialization summary
-        self.logger.info(f"Valid integrators: {self.VALID_INTEGRATORS}| Selected: {self.integrator_name}")
-        self.integrator = self.create_integrator(self.integrator_name)
+            self.temperature = kwargs.get("temperature", self.DEFAULT_PARAMS["temperature"])
+            self.friction = kwargs.get("friction", self.DEFAULT_PARAMS["friction"])
+            self.timestep = kwargs.get("timestep", self.DEFAULT_PARAMS["timestep"])
+            self.tcorr = kwargs.get("tcorr", self.DEFAULT_PARAMS["tcorr"])
+            self.Fact = kwargs.get("Fact", self.DEFAULT_PARAMS["Fact"])
+            
+            self.integrator = self.create_integrator(self.integrator_name)
+
+        elif isinstance(integrator, Integrator):
+            self.integrator_name = "custom"
+            self.integrator = integrator
+            self.logger.info(f"Created custom integrator")
         # self.logger.info('-'*60)
 
     def create_integrator(self, integrator):

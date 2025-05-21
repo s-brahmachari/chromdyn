@@ -96,8 +96,8 @@ class ChromatinDynamics:
             path,
             reportInterval=stability_report_interval,
             logger=self.logger,
-            kinetic_threshold=1e5,
-            potential_threshold=1e5
+            kinetic_threshold=5.0,
+            potential_threshold=5.0
         )
         self.simulation.reporters.append(self.reporters['stability'])
         self.logger.info(f"Stability reporter created: {path}")

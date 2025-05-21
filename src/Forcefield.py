@@ -101,11 +101,11 @@ class ForceFieldManager:
         self.logger.info(f"Adding {num_bonds} harmonic bonds with r0={r0}, k={k}, group={group}")
         self.register_force(bond_force, "HarmonicBonds")
         
-    def add_harmonic_angles(self, theta0: float = 180.0, k: float = 2.0, forcegroup: int = 4) -> None:
+    def add_harmonic_angles(self, theta0: float = 180.0, k: float = 2.0, group: int = 4) -> None:
         """Adds harmonic angle forces between triplets of bonded particles."""
         theta0_rad = theta0 * (np.pi / 180)
         angle_force = HarmonicAngleForce()
-        angle_force.setForceGroup(forcegroup)
+        angle_force.setForceGroup(group)
 
         bonded_neighbors = {atom.index: [] for atom in self.topology.atoms()}
         for bond in self.topology.bonds():
@@ -129,12 +129,12 @@ class ForceFieldManager:
                     num_angles += 1
 
         self.logger.info(f"Adding {num_angles} harmonic angles with parameters:")
-        self.logger.info(f"θ₀: {theta0}° ({theta0_rad:.4f} rad), k: {k}, force group: {forcegroup}")
+        self.logger.info(f"θ₀: {theta0}° ({theta0_rad:.4f} rad), k: {k}, force group: {group}")
         self.register_force(angle_force, "HarmonicAngles")
 
-    def add_fene_bonds(self, k: float = 30.0, R0: float = 1.5, forcegroup: int = 0) -> None:
+    def add_fene_bonds(self, k: float = 30.0, R0: float = 1.5, group: int = 0) -> None:
         """Adds FENE (Finite Extensible Nonlinear Elastic) bonds."""
-        self.logger.info(f"Adding FENE bonds with k={k}, R0={R0}, force group={forcegroup}")
+        self.logger.info(f"Adding FENE bonds with k={k}, R0={R0}, force group={group}")
         fene_force = CustomBondForce("-0.5 * k_fene * R0_fene^2 * log(1 - (r/R0_fene)^2)")
         fene_force.addGlobalParameter("k_fene", k)
         fene_force.addGlobalParameter("R0_fene", R0)
@@ -142,12 +142,12 @@ class ForceFieldManager:
         for bond in self.topology.bonds():
             fene_force.addBond(int(bond[0].id), int(bond[1].id), ())
 
-        fene_force.setForceGroup(forcegroup)
+        fene_force.setForceGroup(group)
         self.register_force(fene_force, "FENEBonds")
 
-    def add_harmonic_trap(self, kr: float = 0.1, center: Tuple[float, float, float] = (0.0, 0.0, 0.0), forcegroup: int = 1) -> None:
+    def add_harmonic_trap(self, kr: float = 0.1, center: Tuple[float, float, float] = (0.0, 0.0, 0.0), group: int = 1) -> None:
         """Adds a harmonic trap to confine particles within a spherical region."""
-        self.logger.info(f"Adding Harmonic Trap with kr={kr}, center={center}, force group={forcegroup}")
+        self.logger.info(f"Adding Harmonic Trap with kr={kr}, center={center}, force group={group}")
         restraintForce = CustomExternalForce(
             "0.5 * k_harm_trap * r * r; "
             "r = sqrt( (x - x0_trap)^2 + (y - y0_trap)^2 + (z - z0_trap)^2 )"
@@ -160,14 +160,14 @@ class ForceFieldManager:
         for i in range(self.topology.getNumAtoms()):
             restraintForce.addParticle(i, ())
 
-        restraintForce.setForceGroup(forcegroup)
+        restraintForce.setForceGroup(group)
         self.register_force(restraintForce, "HarmonicTrap")
 
-    def add_flat_bottom_harmonic(self, k: float = 0.1, r0: float = 10.0, center: Tuple[float, float, float] = (0.0, 0.0, 0.0), forcegroup: int = 1) -> None:
+    def add_flat_bottom_harmonic(self, k: float = 0.1, r0: float = 10.0, center: Tuple[float, float, float] = (0.0, 0.0, 0.0), group: int = 1) -> None:
         """Adds a flat-bottom harmonic potential to confine particles inside a spherical boundary."""
         self.logger.info('-' * 50)
         self.logger.info(f"Adding Flat-Bottom Harmonic potential with parameters:")
-        self.logger.info(f"k = {k}, r0 = {r0}, group = {forcegroup}")
+        self.logger.info(f"k = {k}, r0 = {r0}, group = {group}")
 
         energy_expr = (
             "step(r - rRes) * 0.5 * kR * (r - rRes)^2;"
@@ -175,7 +175,7 @@ class ForceFieldManager:
         )
 
         restraintForce = CustomExternalForce(energy_expr)
-        restraintForce.setForceGroup(forcegroup)
+        restraintForce.setForceGroup(group)
         restraintForce.addGlobalParameter('kR', k)
         restraintForce.addGlobalParameter('rRes', r0)
         restraintForce.addGlobalParameter('x0', center[0])
@@ -188,14 +188,14 @@ class ForceFieldManager:
         self.register_force(restraintForce, "FlatBottomHarmonic")
             
     def add_cylindrical_confinement(self, r_cyl: float = 5.0, z_cyl: float = 10.0,
-                                    k_cyl: float = 10.0, forcegroup: int = 1) -> None:
+                                    k_cyl: float = 10.0, group: int = 1) -> None:
         """
         Adds a cylindrical confinement potential to the system. Particles are confined within
         a cylinder defined by radius in the xy-plane and height along z.
         """
         self.logger.info('-' * 50)
         self.logger.info("Adding Cylindrical Confinement force:")
-        self.logger.info(f"  r_cyl = {r_cyl}, z_cyl = {z_cyl}, k_cyl = {k_cyl}, group = {forcegroup}")
+        self.logger.info(f"  r_cyl = {r_cyl}, z_cyl = {z_cyl}, k_cyl = {k_cyl}, group = {group}")
 
         energy_expr = (
             "step(r_xy - r_cyl) * 0.5 * k_cyl * (r_xy - r_cyl)^2 + "
@@ -207,7 +207,7 @@ class ForceFieldManager:
         confinement_force.addGlobalParameter('r_cyl', r_cyl)
         confinement_force.addGlobalParameter('z_cyl', z_cyl)
         confinement_force.addGlobalParameter('k_cyl', k_cyl)
-        confinement_force.setForceGroup(forcegroup)
+        confinement_force.setForceGroup(group)
 
         for i in range(self.topology.getNumAtoms()):
             confinement_force.addParticle(i, ())
@@ -215,13 +215,13 @@ class ForceFieldManager:
         self.register_force(confinement_force, "CylindricalConfinement")
 
     def add_self_avoidance(self, Ecut: float = 4.0, k: float = 5.0,
-                        r: float = 1.0, forcegroup: int = 2) -> None:
+                        r: float = 1.0, group: int = 2) -> None:
         """
         Adds soft-core self-avoidance force.
         """
         repul_energy = "0.5 * Ecut * (1.0 + tanh((k_rep * (r_rep - r))))"
         avoidance_force = CustomNonbondedForce(repul_energy)
-        avoidance_force.setForceGroup(forcegroup)
+        avoidance_force.setForceGroup(group)
         avoidance_force.setCutoffDistance(self.Nonbonded_cutoff)
         avoidance_force.setNonbondedMethod(self.Nonbonded_method)
 
@@ -234,31 +234,96 @@ class ForceFieldManager:
             avoidance_force.addParticle(())
 
         self.logger.info(f"Adding Self-avoidance force with parameters:")
-        self.logger.info(f"Ecut={Ecut}, k_rep={k}, r_rep={r}, cutoff={self.Nonbonded_cutoff}, group={forcegroup}")
+        self.logger.info(f"Ecut={Ecut}, k_rep={k}, r_rep={r}, cutoff={self.Nonbonded_cutoff}, group={group}")
         self.register_force(avoidance_force, "SelfAvoidance")
 
-    def add_lennard_jones_force(self, epsilon: float = 0.5, sigma: float = 1.0,
-                                forcegroup: int = 3) -> None:
+    def add_lennard_jones_force(self, epsilon: Optional[object] = None, sigma: Optional[object] = None,
+                                group: int = 3) -> None:
         """
         Adds a Lennard-Jones nonbonded force.
         """
-        lj_energy = "4 * epsilon_lj * ((sigma_lj / r) ^ 12 - (sigma_lj / r) ^ 6)"
-        lj_force = CustomNonbondedForce(lj_energy)
-        lj_force.setForceGroup(forcegroup)
+        LJ_energy = "4 * e_LJ * ((sigma_LJ / r) ^ 12 - (sigma_LJ / r) ^ 6);\
+                    e_LJ = min(e_LJ1, e_LJ2); sigma_LJ = 0.5 * (sigma_LJ1 + sigma_LJ2)"
+        lj_force = CustomNonbondedForce(LJ_energy)
+        lj_force.addPerParticleParameter('e_LJ')
+        lj_force.addPerParticleParameter('sigma_LJ')
+        
+
+        lj_force.setForceGroup(group)
         lj_force.setCutoffDistance(self.Nonbonded_cutoff)
         lj_force.setNonbondedMethod(self.Nonbonded_method)
-
-        lj_force.addGlobalParameter('epsilon_lj', epsilon)
-        lj_force.addGlobalParameter('sigma_lj', sigma)
-
+                
         num_particles = getattr(self, 'num_particles', self.system.getNumParticles())
-        for _ in range(num_particles):
-            lj_force.addParticle(())
+        if epsilon is None:
+            epsilon_values = [0.5] * num_particles            
+        elif isinstance(epsilon, (float, int)):
+            epsilon_values = [float(epsilon)] * num_particles
+        elif isinstance(epsilon, (List, np.ndarray, Tuple)):
+            epsilon_values = epsilon
+        assert len(epsilon_values)==num_particles, 'Wrong length of LJ epsilon values'
+        
+        if sigma is None:
+            sigma_values = [1.0] * num_particles            
+        elif isinstance(sigma, (float, int)):
+            sigma_values = [float(sigma)] * num_particles
+        elif isinstance(sigma, (List, np.ndarray, Tuple)):
+            sigma_values = sigma
+            
+        assert len(sigma_values)==num_particles, 'Wrong length of LJ sigma values'
+        
+        for idx in range(num_particles):
+            lj_force.addParticle([epsilon_values[idx], sigma_values[idx]])
 
         self.logger.info("Adding Lennard-Jones force:")
-        self.logger.info(f"epsilon={epsilon}, sigma={sigma}, cutoff={self.Nonbonded_cutoff}, group={forcegroup}")
+        self.logger.info(f"Particles:{num_particles}, epsilon = {np.unique(epsilon_values)}, sigma={np.unique(sigma_values)}, cutoff={self.Nonbonded_cutoff}, group={group}")
         self.register_force(lj_force, "LennardJones")
-        
+    
+    def add_wca_force(self, epsilon: Optional[object] = None, sigma: Optional[object] = None,
+                    group: int = 3) -> None:
+        """
+        Adds a Weeks–Chandler–Andersen (WCA) repulsive nonbonded force.
+        """
+        # Define the WCA energy expression with a cutoff at r = 2^(1/6) * sigma_LJ
+        WCA_energy = """
+        step(2^(1/6) * sigma_wca - r) * (4 * e_wca * ((sigma_wca / r)^12 - (sigma_wca / r)^6) + e_wca);
+        e_wca = min(e_wca1, e_wca2);
+        sigma_wca = 0.5 * (sigma_wca1 + sigma_wca2)
+        """
+
+        wca_force = CustomNonbondedForce(WCA_energy)
+        wca_force.addPerParticleParameter('e_wca')
+        wca_force.addPerParticleParameter('sigma_wca')
+
+        wca_force.setForceGroup(group)
+        wca_force.setCutoffDistance(self.Nonbonded_cutoff)
+        wca_force.setNonbondedMethod(self.Nonbonded_method)
+
+        num_particles = getattr(self, 'num_particles', self.system.getNumParticles())
+
+        if epsilon is None:
+            epsilon_values = [0.5] * num_particles
+        elif isinstance(epsilon, (float, int)):
+            epsilon_values = [float(epsilon)] * num_particles
+        elif isinstance(epsilon, (List, np.ndarray, Tuple)):
+            epsilon_values = epsilon
+        assert len(epsilon_values) == num_particles, 'Wrong length of WCA epsilon values'
+
+        if sigma is None:
+            sigma_values = [1.0] * num_particles
+        elif isinstance(sigma, (float, int)):
+            sigma_values = [float(sigma)] * num_particles
+        elif isinstance(sigma, (List, np.ndarray, Tuple)):
+            sigma_values = sigma
+        assert len(sigma_values) == num_particles, 'Wrong length of WCA sigma values'
+
+        for idx in range(num_particles):
+            wca_force.addParticle([epsilon_values[idx], sigma_values[idx]])
+
+        self.logger.info("Adding WCA force:")
+        self.logger.info(f"Particles: {num_particles}, epsilon = {np.unique(epsilon_values)}, "
+                        f"sigma = {np.unique(sigma_values)}, cutoff = {self.Nonbonded_cutoff}, group = {group}")
+        self.register_force(wca_force, "WCA")
+    
     def add_LJ_repulsion(self, sigma: float = 1.0, group: int = 6) -> None:
         """
         Adds hard-core self-avoidance with a simple repulsive Lennard-Jones potential.

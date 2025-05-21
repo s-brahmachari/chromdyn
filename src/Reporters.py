@@ -82,13 +82,22 @@ class StabilityReporter:
         num_particles = simulation.system.getNumParticles()
         e_kinetic = state.getKineticEnergy().value_in_unit(unit.kilojoules_per_mole) / num_particles
         e_potential = state.getPotentialEnergy().value_in_unit(unit.kilojoules_per_mole) / num_particles
-        temperature = simulation.integrator.getTemperature().value_in_unit(unit.kelvin)
+        
+        
+        if hasattr(simulation.integrator, 'getTemperature'):
+            temperature = simulation.integrator.getTemperature().value_in_unit(unit.kelvin)
+        else:
+            temperature = 240.0
+        
+        kBT = 0.008314 * temperature
+        e_kinetic_expected = 1.5 * kBT
 
-        if e_kinetic > self.kinetic_threshold or abs(e_potential) > self.potential_threshold:
-            self.logger.warning(f"<<INSTABILITY DETECTED>> at step {simulation.currentStep}: K.E. = {e_kinetic:.2f} | P.E. = {e_potential:.2f}")
+        if e_kinetic/e_kinetic_expected > self.kinetic_threshold or abs(e_potential)/e_kinetic_expected > self.potential_threshold:
+    
             seed = np.random.randint(100_000)
             simulation.context.setVelocitiesToTemperature(temperature, seed)
-            self.saveFile.write(f"Step {simulation.currentStep}: K.E. = {e_kinetic:.2f} | P.E. = {e_potential:.2f} | Reinitialized velocities.\n")
+            self.logger.warning(f"<<INSTABILITY | Reinitialized velocities>> at step {simulation.currentStep}: K.E. = {e_kinetic:.2f} | P.E. = {e_potential:.2f}")
+            self.saveFile.write(f"<<INSTABILITY | Reinitialized velocities>> Step {simulation.currentStep}: K.E. = {e_kinetic:.2f} | P.E. = {e_potential:.2f}\n")
             self.saveFile.flush()
 
 class EnergyReporter:
@@ -197,7 +206,7 @@ def save_pdb(chrom_dyn_obj, **kwargs):
         chain_index = -1
         for chain in topology.chains():
             chain_index += 1
-            if chain_index>9: chain_index='A'
+            if chain_index>9: chain_index=9
             for residue in chain.residues():
                 for atom in residue.atoms():
                     pos = positions[atom_index]
@@ -214,5 +223,6 @@ def save_pdb(chrom_dyn_obj, **kwargs):
                     )
                     pdb_file.write(pdb_line)
                     atom_index += 1
+            
 
         pdb_file.write("ENDMDL\n")
