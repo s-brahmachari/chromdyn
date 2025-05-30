@@ -16,7 +16,16 @@ class ChromatinDynamics:
     - System setup, forces, integrators, analysis, and logging.
     """
 
-    def __init__(self, topology: Topology, name: str = 'ChromatinDynamics', platform_name: str = "CUDA", output_dir: str = "output", console_stream: bool = True, mass: float = 1.0) -> None:
+    def __init__(
+        self, 
+        topology: Topology, 
+        name: str = 'ChromatinDynamics', 
+        platform_name: str = "CUDA", 
+        output_dir: str = "output", 
+        console_stream: bool = True, 
+        mass: float = 1.0,
+        ) -> None:
+        
         self.name = name
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)

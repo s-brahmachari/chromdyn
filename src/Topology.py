@@ -1,97 +1,146 @@
 from openmm.app import Topology
 from pathlib import Path
 import numpy as np
+from typing import List, Optional, Union
 
 class TopologyGenerator:
-    def __init__(self):
-        self.topology = Topology()
-        self.atom_types = None
-    
-    def gen_top(self, chain_lens, types="A", **kwargs):
+    def __init__(self) -> None:
         """
-        Generates the molecular topology, adding chains, residues, atoms, and bonds.
+        Initialize a new TopologyGenerator with an empty OpenMM Topology object.
         """
-        atoms_per_residue = int(kwargs.get('atoms_per_residue', 1))
-        chain_names = kwargs.get('chain_names', [f'C{xx}' for xx in range(1,len(chain_lens)+1)])
-        isRing = kwargs.get('isRing',[0] * len(chain_lens))
+        self.topology: Topology = Topology()  # OpenMM Topology container
+        self.atom_types: Optional[List[str]] = None  # Will hold atom type names after topology generation
+
+    def gen_top(
+        self,
+        chain_lens: List[int],
+        types: Union[str, List[str]] = "A",
+        chain_names: Optional[List[str]] = None,
+        isRing: Optional[List[int]] = None,
+        **kwargs
+    ) -> None:
+        """
+        Generate a molecular topology with chains, residues, atoms, and bonds.
+
+        Parameters:
+        - chain_lens (List[int]): Number of atoms in each chain.
+        - types (str | List[str]): Atom type assignment. Can be a single type, a list, 'unique', or a filename.
+        - chain_names (List[str], optional): Names for each chain. Defaults to ['C1', 'C2', ...].
+        - isRing (List[int], optional): Marks chains that should be closed with a bond from last to first atom.
+        - kwargs:
+            - atoms_per_residue (int): Number of atoms per residue. Default is 1.
+        """
+        # Number of atoms in each residue
+        atoms_per_residue: int = int(kwargs.get('atoms_per_residue', 1))
         
-        if type(types)==str:
-            # check for a filename
+        # Default chain names if not provided
+        if chain_names is None:
+            chain_names = [f'C{xx}' for xx in range(1, len(chain_lens)+1)]
+        
+        # Default isRing flag as 0 (non-cyclic) if not provided
+        if isRing is None:
+            isRing = [0] * len(chain_lens)
+        
+        atom_types: List[str] = []
+        
+        # Determine atom types from input
+        if isinstance(types, str):
             type_file = Path(types)
             if type_file.exists():
-                atom_types = np.loadtxt(type_file, usecols=[1], dtype=str)
-            elif types=='unique':
-                # set unique names for each atom or monomer: M1, M2, ...
-                atom_types = [f"M{xx}" for xx in range(1, sum(chain_lens)+1)]    
-            elif len(types)<4:
-                #assume the str is a name; use for all atoms
+                # Load from file if it exists
+                atom_types = np.loadtxt(type_file, usecols=[1], dtype=str).tolist()
+            elif types == 'unique':
+                # Assign unique types for each atom
+                atom_types = [f"M{xx}" for xx in range(1, sum(chain_lens)+1)]
+            elif len(types) < 4:
+                # Use single type for all atoms
                 atom_types = [types] * sum(chain_lens)
-        elif type(types)==list:
+        elif isinstance(types, list):
             atom_types = types
-        
+
+        # Validation checks
         assert len(chain_names) == len(chain_lens), 'chain_names do not match chain_lens'
         assert len(atom_types) == sum(chain_lens), 'types file does not match chain_lens'
-        
-        kk=0
+
+        kk: int = 0  # Atom counter across all chains
+
         for cid, chain_len in enumerate(chain_lens):
-            chain = self.topology.addChain(chain_names[cid])  # Chain ID formatted to 5 digits
+            chain = self.topology.addChain(chain_names[cid])  # Add a new chain
             previous_atom = None
-            num_residues = chain_len//atoms_per_residue
-            small_residue_atoms = chain_len % atoms_per_residue
-            for resid in range(1, num_residues+1):
-                residue = self.topology.addResidue(f"L{resid}", chain)  # Residue ID formatted to 5 digits
+            num_residues = chain_len // atoms_per_residue  # Full residues
+            small_residue_atoms = chain_len % atoms_per_residue  # Remainder atoms
+
+            # Add full residues
+            for resid in range(1, num_residues + 1):
+                residue = self.topology.addResidue(f"L{resid}", chain)
                 for aid in range(atoms_per_residue):
-                    atom = self.topology.addAtom(f"{chain_names[cid]}-L{resid}-{aid+1}", f"{atom_types[kk]}", residue, f"{kk}")
-                
-                    # Add intra-residue bonds sequentially
+                    atom = self.topology.addAtom(
+                        f"{chain_names[cid]}-L{resid}-{aid+1}",
+                        f"{atom_types[kk]}",
+                        residue,
+                        f"{kk}"
+                    )
                     if previous_atom is not None:
-                        self.topology.addBond(previous_atom, atom)
-                    kk+=1
-                    # Store atom for the next connection
-                    previous_atom = atom  
-                    
-                
+                        self.topology.addBond(previous_atom, atom)  # Bond with previous atom
+                    kk += 1
+                    previous_atom = atom
+
+            # Add any leftover atoms as an additional residue
             for ii in range(small_residue_atoms):
-                residue = self.topology.addResidue(f"L{resid+1}", chain) 
-                atom = self.topology.addAtom(f"{chain_names[cid]}-L{resid}-{ii+1}", f"{atom_types[kk]}", residue, f"{kk}")
+                residue = self.topology.addResidue(f"L{resid+1}", chain)
+                atom = self.topology.addAtom(
+                    f"{chain_names[cid]}-L{resid}-{ii+1}",
+                    f"{atom_types[kk]}",
+                    residue,
+                    f"{kk}"
+                )
                 self.topology.addBond(previous_atom, atom)
                 previous_atom = atom
                 kk += 1
-        
+
+        # If marked as ring, connect last atom to first atom in each such chain
         for idx, chain in enumerate(self.topology.chains()):
-            if isRing[idx]>0:
-                first_atom=list(chain.atoms())[0]
+            if isRing[idx] > 0:
+                first_atom = list(chain.atoms())[0]
                 last_atom = list(chain.atoms())[-1]
                 self.topology.addBond(first_atom, last_atom)
+
+        # Store atom types for future reference or export
         self.atom_types = atom_types
-        
-        
-    def print_top(self, ):
+
+    def print_top(self) -> None:
         """
-        Writes the generated topology to a formatted output file, with an atom count at the beginning.
+        Print the generated topology to stdout with formatted fields:
+        Atom ID, Name, Type, Residue (Loci), and Chain ID.
         """
-        atom_count = sum(1 for _ in self.topology.atoms())  # Count total atoms
-        
-        print(f"{atom_count}\n")  # Write total number of atoms as the first line
-        print(f"{'ID':<10} {'Name':<20} {'Type':<10} {'Loci':<10} {'Chain':<10}\n")  # Header
+        atom_count: int = sum(1 for _ in self.topology.atoms())  # Total atom count
+        print(f"{atom_count}\n")
+        print(f"{'ID':<10} {'Name':<20} {'Type':<10} {'Loci':<10} {'Chain':<10}\n")
+
         for chain in self.topology.chains():
             for residue in chain.residues():
                 for atom in residue.atoms():
-                    print(f"{atom.id:<10} {atom.name:<20} {atom.element:<10} {residue.name:<10} {chain.id:<10}\n")
-                        
-    def save_top(self, filename='topology.txt'):
+                    print(
+                        f"{atom.id:<10} {atom.name:<20} {atom.element:<10} "
+                        f"{residue.name:<10} {chain.id:<10}\n"
+                    )
+
+    def save_top(self, filename: str = 'topology.txt') -> None:
         """
-        Writes the generated topology to a formatted output file, with an atom count at the beginning.
+        Save the generated topology to a file with formatted fields:
+        Atom ID, Name, Type, Residue (Loci), and Chain ID.
+
+        Parameters:
+        - filename (str): Output file path. Defaults to 'topology.txt'.
         """
-        atom_count = sum(1 for _ in self.topology.atoms())  # Count total atoms
-        
+        atom_count: int = sum(1 for _ in self.topology.atoms())
         with open(filename, "w") as f:
-            f.write(f"{atom_count}\n")  # Write total number of atoms as the first line
-            f.write(f"{'ID':<10} {'Name':<20} {'Type':<10} {'Loci':<10} {'Chain':<10}\n")  # Header
+            f.write(f"{atom_count}\n")
+            f.write(f"{'ID':<10} {'Name':<20} {'Type':<10} {'Loci':<10} {'Chain':<10}\n")
             for chain in self.topology.chains():
                 for residue in chain.residues():
                     for atom in residue.atoms():
-                        f.write(f"{atom.id:<10} {atom.name:<20} {atom.element:<10} {residue.name:<10} {chain.id:<10}\n")
-            
-
-
+                        f.write(
+                            f"{atom.id:<10} {atom.name:<20} {atom.element:<10} "
+                            f"{residue.name:<10} {chain.id:<10}\n"
+                        )
