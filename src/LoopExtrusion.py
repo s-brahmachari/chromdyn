@@ -7,124 +7,7 @@ import os
 from scipy.spatial import distance
 from Utilities import LogManager
 
-class Extrusion_kinetics:
-    def __init__(self, lef: Any):
-        """
-        Initialize the Gillespie extrusion object.
-
-        Args:
-        - lef: Loop extruder object containing details of all the extruders
-
-        Returns:
-        - None
-        """
-        self.lef: Any = lef  # Loop extruder object
-        self.rng: np.random.Generator = np.random.default_rng(lef.seed)  # Random number generator
-        self.lef.logger.info("Extrusion kinetcis using the same random number seed as LEF")
-        self.time: float = 0  # Initialize time
-        self.dt: float = 0
-        self.current_event: Dict[str, Any] = {}  # initialize empty event dict
-
-    def simulate_step(self, verbose = True) -> None:
-        """
-        Perform a single simulation step.
-
-        Returns:
-        - None
-        """
-        # Gillespie part
-        self.create_rate_vec()
-        time: float = self.get_time_to_next_event()
-        event: Dict[str, Any] = self.get_next_event()
-        self.current_event = event
-        self.dt = time
-        self.time += time
-        if bool(verbose) == True: 
-            self.print_event(event)
-    
-        # Loop extruder part
-        self.lef.update_LEs(event, time)
-        self.lef.save_anchors(self.time)    
-        # self.logger.info(f"Rate vector: {self.rate_vec}")
-        if bool(verbose) == True: 
-            self.lef.print_latest_event()
-
-        # elif verbose == 2:
-        #     self.print_event(event)
-            
-    def simulate(self, tstop:float) -> None:
-        t=0
-        while t<tstop:
-            self.simulate_step()
-            t += self.dt
-        
-    def create_rate_vec(self) -> None:
-        """
-        Create the rate vector with each LEF leg translocation as independent events.
-
-        Returns:
-        - None
-        """
-        self.rate_vec: np.ndarray = np.array([
-            [
-                self.lef.get_off_rate(key),
-                self.lef.get_step_left_rate(key),
-                self.lef.get_step_right_rate(key),
-                self.lef.get_hop_left_rate(key),
-                self.lef.get_hop_right_rate(key)
-            ]
-            for key in self.lef.loop_extruder_dict.keys()
-        ]).flatten()
-
-        self.event_matrix: np.ndarray = np.array([
-            [
-                {'LE_id': key, 'move_left_anchor': False, 'move_right_anchor': False, 'unbind': True, 'hop_left': False, 'hop_right': False},
-                {'LE_id': key, 'move_left_anchor': True, 'move_right_anchor': False, 'unbind': False, 'hop_left': False, 'hop_right': False},
-                {'LE_id': key, 'move_left_anchor': False, 'move_right_anchor': True, 'unbind': False, 'hop_left': False, 'hop_right': False},
-                {'LE_id': key, 'move_left_anchor': False, 'move_right_anchor': False, 'unbind': False, 'hop_left': True, 'hop_right': False},
-                {'LE_id': key, 'move_left_anchor': False, 'move_right_anchor': False, 'unbind': False, 'hop_left': False, 'hop_right': True}
-            ]
-            for key in self.lef.loop_extruder_dict.keys()
-        ]).flatten()
-
-    def get_time_to_next_event(self) -> float:
-        """
-        Return the time to simulate before the next event occurs.
-
-        Returns:
-        - time_to_next_event: Time to next event
-        """
-        mean_time: float = 1. / self.rate_vec.sum()
-        time_to_next_event: float = self.rng.exponential(scale=mean_time)
-        return time_to_next_event
-
-    def get_next_event(self) -> Dict[str, Any]:
-        """
-        Return the id and anchor of the LEF to translocate.
-
-        Returns:
-        - event_vec: Next event
-        """
-        event_vec: Dict[str, Any] = self.rng.choice(self.event_matrix, size=1, p=self.rate_vec / self.rate_vec.sum())[0]
-        return event_vec
-
-    def print_event(self, event: Dict[str, Any]) -> None:
-        """
-        Extract the event from evenet vector and print 
-
-        Args:
-        - event: the selected event dict
-
-        Returns:
-        - None
-        """
-        leid: str = event['LE_id']
-        true_events: list[str] = [key for key, value in event.items() if value is True and key != 'LE_id']
-        # dx_left: float = self.lef.loop_extruder_dict[leid]['left_anchor'] - self.lef.loop_extruder_dict_old[leid]['left_anchor']
-        # dx_right: float = self.lef.loop_extruder_dict[leid]['right_anchor'] - self.lef.loop_extruder_dict_old[leid]['right_anchor']
-        self.lef.logger.info(f"Time: {self.time:<10.5f} | dt: {self.dt:^10.5f} | {leid:^6s} {true_events[0]:<20s}")
-
-class Loop_Extruders():
+class Loop_Extruders:
     
     def __init__(
         self,
@@ -168,7 +51,13 @@ class Loop_Extruders():
         self._initialize_blockers()
         self.valid_pausing_rules = ('both_blocked', 'forward_blocked')
         self.valid_hopping_rules = ('independent', 'both_paused')
-    
+        
+        self.stats = LoopExtruderStats(self.num_LE)
+        
+        self.time: float = 0  # Initialize time
+        self.dt: float = 0
+        self.current_event: Dict[str, Any] = {}
+        
     def _initialize_rng(self) -> None:
         seed = np.random.randint(100000000)
         self.seed = seed
@@ -229,6 +118,9 @@ class Loop_Extruders():
         
         for leid, ledict in self.loop_extruder_dict.items():
             ledict.update(self.get_default_extruder_params())
+    
+    def get_leids(self) -> List:
+        return list(self.loop_extruder_dict.keys())
     
     def get_default_extruder_params(self) -> Dict[str, Any]:
         deafult_params_dict = {
@@ -354,7 +246,7 @@ class Loop_Extruders():
             if self.free_for_binding(anchor_i) and self.free_for_binding(anchor_i+1): 
                 keep_searching = False
                 new_anchors = (anchor_i, anchor_i+1)
-            if maxiter>100:
+            if maxiter>1000:
                 raise ValueError(f"Cannot find random binding site. Exceeded maxiter={maxiter}")
         return new_anchors
 
@@ -454,7 +346,99 @@ class Loop_Extruders():
         """
         self.mobile_blockers.remove(old_anchor)
         self.mobile_blockers.append(new_anchor)
+    
+    def simulate_step(self, verbose = True) -> None:
+        """
+        Perform a single simulation step.
+
+        Returns:
+        - None
+        """
+        # Gillespie part
+        self.create_rate_vec()
+        time: float = self.get_time_to_next_event()
+        event: Dict[str, Any] = self.get_next_event()
+        self.current_event = event
+        self.dt = time
+        self.time += time
+        if bool(verbose) == True: 
+            self.print_event(event)
+    
+        # Loop extruder part
+        self.update_LEs(event, time)
+        self.save_anchors(self.time)    
+        # self.logger.info(f"Rate vector: {self.rate_vec}")
+        if bool(verbose) == True: 
+            self.print_latest_event()
         
+        self.stats.record_state(extruder_id= int(self.current_LE.strip("LE")), dt=self.dt, time=self.time, step_size=self.current_LE_step, extruder_dict=self.loop_extruder_dict)
+        
+    def create_rate_vec(self) -> None:
+        """
+        Create the rate vector with each LEF leg translocation as independent events.
+
+        Returns:
+        - None
+        """
+        self.rate_vec: np.ndarray = np.array([
+            [
+                self.get_off_rate(key),
+                self.get_step_left_rate(key),
+                self.get_step_right_rate(key),
+                self.get_hop_left_rate(key),
+                self.get_hop_right_rate(key)
+            ]
+            for key in self.loop_extruder_dict.keys()
+        ]).flatten()
+
+        self.event_matrix: np.ndarray = np.array([
+            [
+                {'LE_id': key, 'move_left_anchor': False, 'move_right_anchor': False, 'unbind': True, 'hop_left': False, 'hop_right': False},
+                {'LE_id': key, 'move_left_anchor': True, 'move_right_anchor': False, 'unbind': False, 'hop_left': False, 'hop_right': False},
+                {'LE_id': key, 'move_left_anchor': False, 'move_right_anchor': True, 'unbind': False, 'hop_left': False, 'hop_right': False},
+                {'LE_id': key, 'move_left_anchor': False, 'move_right_anchor': False, 'unbind': False, 'hop_left': True, 'hop_right': False},
+                {'LE_id': key, 'move_left_anchor': False, 'move_right_anchor': False, 'unbind': False, 'hop_left': False, 'hop_right': True}
+            ]
+            for key in self.loop_extruder_dict.keys()
+        ]).flatten()
+            
+    def get_time_to_next_event(self) -> float:
+        """
+        Return the time to simulate before the next event occurs.
+
+        Returns:
+        - time_to_next_event: Time to next event
+        """
+        mean_time: float = 1. / self.rate_vec.sum()
+        time_to_next_event: float = self.rng.exponential(scale=mean_time)
+        return time_to_next_event
+    
+    def get_next_event(self) -> Dict[str, Any]:
+        """
+        Return the id and anchor of the LEF to translocate.
+
+        Returns:
+        - event_vec: Next event
+        """
+        event_vec: Dict[str, Any] = self.rng.choice(self.event_matrix, size=1, p=self.rate_vec / self.rate_vec.sum())[0]
+        return event_vec
+
+    def print_event(self, event: Dict[str, Any]) -> None:
+        """
+        Extract the event from evenet vector and print 
+
+        Args:
+        - event: the selected event dict
+
+        Returns:
+        - None
+        """
+        leid: str = event['LE_id']
+        true_events: list[str] = [key for key, value in event.items() if value is True and key != 'LE_id']
+        # dx_left: float = self.lef.loop_extruder_dict[leid]['left_anchor'] - self.lef.loop_extruder_dict_old[leid]['left_anchor']
+        # dx_right: float = self.lef.loop_extruder_dict[leid]['right_anchor'] - self.lef.loop_extruder_dict_old[leid]['right_anchor']
+        self.logger.info(f"Time: {self.time:<10.5f} | dt: {self.dt:^10.5f} | {leid:^6s} {true_events[0]:<20s}")
+
     def update_LEs(self, event, dt):
         """
         Update the loop extruder dict (old and current) with the event
@@ -488,6 +472,7 @@ class Loop_Extruders():
             self.set_LE_left_anchor(LE_id, left_anchor, -1)
             self.set_LE_right_anchor(LE_id, right_anchor, -1)
             self.update_all_LE_times(dt, exclude=LE_id)
+            self.current_LE_step = None
             
         elif event['move_left_anchor']:
             x_t = self.loop_extruder_dict[LE_id]["left_anchor"]
@@ -497,7 +482,7 @@ class Loop_Extruders():
             self.loop_extruder_dict[LE_id]['active_force_left'] = f_t
             self.set_LE_left_anchor(LE_id, new_left_anchor, roadblock)
             self.update_all_LE_times(dt)
-            self.LE_steps.append(Delta_x)
+            self.current_LE_step = Delta_x
             
         elif event['move_right_anchor']:
             x_t = self.loop_extruder_dict[LE_id]["right_anchor"]
@@ -507,10 +492,11 @@ class Loop_Extruders():
             self.loop_extruder_dict[LE_id]['active_force_right'] = f_t
             self.set_LE_right_anchor(LE_id, new_right_anchor, roadblock)
             self.update_all_LE_times(dt)
-            self.LE_steps.append(Delta_x)
+            self.current_LE_step = Delta_x
             
         elif event['hop_left']:
             x_t = self.loop_extruder_dict[LE_id]["left_anchor"]
+            self.current_LE_step = None
             hopped=0
             if self.hop3D:
                 self.update_LE_3Dneighbors(cutoff=self.dist3D_cutoff)
@@ -552,6 +538,7 @@ class Loop_Extruders():
             
         elif event['hop_right']:
             x_t = self.loop_extruder_dict[LE_id]["right_anchor"]
+            self.current_LE_step = None
             hopped=0
             
             if self.hop3D:
@@ -676,32 +663,7 @@ class Loop_Extruders():
             #         indices.pop(xx)
                     
             self.loop_extuder_3Dneighbors[leid] = indices
-    
-    # def update_LE_resisting_forces(self,):
-    #     coords = self.sim3D.state.getPositions(asNumpy=True)
-    #     for leid in self.loop_extruder_dict.keys():
-    #         left_anchor_pos = coords[int(self.loop_extruder_dict[leid]['left_anchor']),:]
-    #         right_anchor_pos = coords[int(self.loop_extruder_dict[leid]['right_anchor']),:]
-    #         strain=(np.linalg.norm(left_anchor_pos-right_anchor_pos)-1)
-    #         force = self.k_LE * strain
-    #         self.loop_extruder_dict[leid]['resisting_force']=force
-    #         self.loop_extruder_dict[leid]['strain'].append(strain)
-    #         # print('tunisia', leid, force, strain, int(self.loop_extruder_dict[leid]['left_anchor']), int(self.loop_extruder_dict[leid]['right_anchor']))
-    
-    # def reset_LE_resisting_forces(self,):
-    #     for leid in self.loop_extruder_dict.keys():
-    #         # self.loop_extruder_dict[leid]['resisting_force']=force
-    #         self.loop_extruder_dict[leid]['strain']=[0.0]
-
-    # def _integrate_force(self, f0, dt, tau):
-    #     t_mesh=self.t_mesh
-    #     times = np.arange(t_mesh, dt, t_mesh)
-    #     f=np.zeros((len(f0),times.shape[0]+1))
-    #     f[:,0]=f0
-    #     for ii, _ in enumerate(times):
-    #         f[:, ii+1] = f[:, ii] * np.exp(-t_mesh/tau) + np.sqrt(1-np.exp(-2 * t_mesh / tau)) * self.rng.normal(loc=0, scale=1.0, size=len(f0))
-    #     return times, f
-    
+ 
     def update_LE_resisting_force(self,leids, anchor_locs):
         # print(leids, anchor_locs)
         state = self.sim3D.simulation.context.getState(getPositions=True)
@@ -721,28 +683,6 @@ class Loop_Extruders():
         (Updates one key in loop extruder dict)
         """
         self.loop_extruder_dict[LE_id].update(self.get_default_extruder_params())
-        # self.loop_extruder_dict[LE_id]['bound_time'] = 0.0
-        # self.loop_extruder_dict[LE_id]['left_anchor_paused_time']= 0.0 
-        # self.loop_extruder_dict[LE_id]['right_anchor_paused_time']= 0.0 
-        # self.loop_extruder_dict[LE_id]['both_anchors_paused_time'] = 0.0
-        # self.loop_extruder_dict[LE_id]['is_left_anchor_paused'] = False 
-        # self.loop_extruder_dict[LE_id]['is_right_anchor_paused'] = False
-        # self.loop_extruder_dict[LE_id]['left_anchor_paused_time'] = 0.0 
-        # self.loop_extruder_dict[LE_id]['right_anchor_paused_time'] = 0.0
-        # self.loop_extruder_dict[LE_id]['both_anchors_paused_time'] = 0.0
-        # self.loop_extruder_dict[LE_id]['hop_left_factor'] = 1.0 
-        # self.loop_extruder_dict[LE_id]['strain'] = [0.0] 
-        # self.loop_extruder_dict[LE_id]['hop_right_factor'] = 1.0
-        # self.loop_extruder_dict[LE_id]['off_rate_factor'] = 1.0
-        # self.loop_extruder_dict[LE_id]['left_anchor_paused_at']= -1 
-        # self.loop_extruder_dict[LE_id]['right_anchor_paused_at']= -1
-        # self.loop_extruder_dict[LE_id]['left_anchor_paused_by']= [None,None] 
-        # self.loop_extruder_dict[LE_id]['right_anchor_paused_by']= [None,None]
-        # self.loop_extruder_dict[LE_id]["v_right_anchor"] = self.v_LE
-        # self.loop_extruder_dict[LE_id]["v_left_anchor"] = self.v_LE
-        # self.loop_extruder_dict[LE_id]["active_force_left"] = self.v_LE * self.drag
-        # self.loop_extruder_dict[LE_id]["active_force_right"] = self.v_LE * self.drag
-        # self.loop_extruder_dict[LE_id]["resisting_force"] = 0.0
     
     def set_pausing_rule(self, leid, rule):
         if rule not in self.valid_pausing_rules:
@@ -991,3 +931,180 @@ class Loop_Extruders():
                     fout.write("\t{0:10.4f}\t{1:10.4f}".format(left, right))
                 fout.write("\n")
 
+    def simulate(self, tstop:float, verbose:bool = True) -> None:
+        t=0
+        while t<tstop:
+            self.simulate_step(verbose)
+            t += self.dt
+
+    # def update_LE_resisting_forces(self,):
+    #     coords = self.sim3D.state.getPositions(asNumpy=True)
+    #     for leid in self.loop_extruder_dict.keys():
+    #         left_anchor_pos = coords[int(self.loop_extruder_dict[leid]['left_anchor']),:]
+    #         right_anchor_pos = coords[int(self.loop_extruder_dict[leid]['right_anchor']),:]
+    #         strain=(np.linalg.norm(left_anchor_pos-right_anchor_pos)-1)
+    #         force = self.k_LE * strain
+    #         self.loop_extruder_dict[leid]['resisting_force']=force
+    #         self.loop_extruder_dict[leid]['strain'].append(strain)
+    #         # print('tunisia', leid, force, strain, int(self.loop_extruder_dict[leid]['left_anchor']), int(self.loop_extruder_dict[leid]['right_anchor']))
+    
+    # def reset_LE_resisting_forces(self,):
+    #     for leid in self.loop_extruder_dict.keys():
+    #         # self.loop_extruder_dict[leid]['resisting_force']=force
+    #         self.loop_extruder_dict[leid]['strain']=[0.0]
+
+    # def _integrate_force(self, f0, dt, tau):
+    #     t_mesh=self.t_mesh
+    #     times = np.arange(t_mesh, dt, t_mesh)
+    #     f=np.zeros((len(f0),times.shape[0]+1))
+    #     f[:,0]=f0
+    #     for ii, _ in enumerate(times):
+    #         f[:, ii+1] = f[:, ii] * np.exp(-t_mesh/tau) + np.sqrt(1-np.exp(-2 * t_mesh / tau)) * self.rng.normal(loc=0, scale=1.0, size=len(f0))
+    #     return times, f
+    
+class LoopExtruderStats:
+    """
+    A helper class to record—and later retrieve—time‐series statistics
+    (e.g. step_size, force, etc.) for each loop extruder.
+    """
+
+    def __init__(self, num_extruders: int) -> None:
+        """
+        Parameters
+        ----------
+        num_extruders : int
+            The total number of extruders (same as num_LE in Loop_Extruders).
+        """
+        self.num_extruders = num_extruders
+
+        # Initialize a dict mapping extruder ID (0..num_extruders-1) to lists of entries
+        # Each entry will be a tuple (time, step_size). You can expand this to hold other fields.
+        self._data: Dict[int, Dict[str, List[Any]]] = {
+            leid: {
+                "bound_times": [],      # list of float
+                "step_sizes": []  # list of float
+                # If you want more variables (e.g. force, position), add more lists here:
+                # "forces": [],
+                # "positions": [],
+            }
+            for leid in range(num_extruders)
+        }
+        
+        self._traj: Dict[str, Any] = {'time_stamp': [], 
+                                     'anchors' : []}
+
+    def record_state(self, extruder_id: int, time: float, dt: float, step_size: Union[float, Any], extruder_dict: Dict[str, Any]) -> None:
+        """
+        Append one new (time, step_size) record for the given extruder.
+
+        Parameters
+        ----------
+        extruder_id : int
+            Index of the extruder (0 <= extruder_id < num_extruders).
+        time : float
+            Simulation time (or whatever time unit) at which this step occurred.
+        step_size : float
+            The step size taken by this extruder at 'time'.
+        """
+        if not (0 <= extruder_id < self.num_extruders):
+            raise IndexError(f"extruder_id {extruder_id} is out of range [0, {self.num_extruders})")
+        if step_size is not None:
+            self._data[extruder_id]["step_sizes"].append(step_size)
+        else:
+            bound_time = extruder_dict[f"LE{extruder_id}"]['bound_time']
+            self._data[extruder_id]["bound_times"].append(bound_time)
+        
+        anchors = [(extruder_dict[idx]['left_anchor'], extruder_dict[idx]['right_anchor']) for idx in extruder_dict.keys()]
+        self._traj['time_stamp'].append(time)
+        self._traj['anchors'].append(anchors)
+    
+    def get_LEsteps(self, extruder_id: int) -> np.array:
+        """
+        Retrieve the full list of (time, step_size) for the given extruder.
+
+        Returns
+        -------
+        List[Tuple[float, float]]
+            A list of (time, step_size) tuples in the order they were recorded.
+        """
+        if not (0 <= extruder_id < self.num_extruders):
+            raise IndexError(f"extruder_id {extruder_id} is out of range [0, {self.num_extruders})")
+
+        return np.array(self._data[extruder_id]["step_sizes"])
+    
+    def get_all_steps(self,) -> List:
+        """
+        Retrieve the full list of (time, step_size) for the given extruder.
+
+        Returns
+        -------
+        List[Tuple[float, float]]
+            A list of (time, step_size) tuples in the order they were recorded.
+        """
+        ret = np.array([])
+        for id in range(self.num_extruders):
+            ret = np.concatenate((ret, self._data[id]["step_sizes"]), axis=0)
+            
+        return ret
+    
+    def get_all_bound_times(self,) -> List:
+        """
+        Retrieve the full list of (time, step_size) for the given extruder.
+
+        Returns
+        -------
+        List[Tuple[float, float]]
+            A list of (time, step_size) tuples in the order they were recorded.
+        """
+        ret = np.array([])
+        for id in range(self.num_extruders):
+            ret = np.concatenate((ret, self._data[id]["bound_times"]), axis=0)
+            
+        return ret
+
+    def get_extrusion_history(self) -> Dict[str, Any]:
+        """
+        Retrieve the full list of (time, step_size) for the given extruder.
+
+        Returns
+        -------
+        List[Tuple[float, float]]
+            A list of (time, step_size) tuples in the order they were recorded.
+        """
+        
+        return self._traj
+
+    def get_extruder_history(self, extruder_id: int) -> List[Tuple[float, float]]:
+        """
+        Retrieve the full list of (time, step_size) for the given extruder.
+
+        Returns
+        -------
+        List[Tuple[float, float]]
+            A list of (time, step_size) tuples in the order they were recorded.
+        """
+        if not (0 <= extruder_id < self.num_extruders):
+            raise IndexError(f"extruder_id {extruder_id} is out of range [0, {self.num_extruders})")
+
+        times = self._data[extruder_id]["times"]
+        steps = self._data[extruder_id]["step_sizes"]
+        return list(zip(times, steps))
+
+    def get_all_histories(self) -> Dict[int, List[Tuple[float, float]]]:
+        """
+        Retrieve data for all extruders at once.
+
+        Returns
+        -------
+        Dict[int, List[Tuple[float, float]]]
+            Mapping extruder_id → list of (time, step_size).
+        """
+        return {eid: self.get_extruder_history(eid) for eid in range(self.num_extruders)}
+
+    def clear(self) -> None:
+        """
+        Clear all stored histories for every extruder.
+        """
+        for eid in range(self.num_extruders):
+            self._data[eid]["times"].clear()
+            self._data[eid]["step_sizes"].clear()
