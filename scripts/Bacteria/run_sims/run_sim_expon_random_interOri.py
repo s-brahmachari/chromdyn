@@ -23,6 +23,7 @@ if __name__=="__main__":
     parser.add_argument('-interOri',default=0.0,dest='interOri', type=float)
     
     parser.add_argument('-nrep',default=1,dest='nrep', type=int)
+    parser.add_argument('-nrep_init',default=0,dest='nrep_init', type=int)
 
     args=parser.parse_args()
     os.environ["HDF5_USE_FILE_LOCKING"]="FALSE"
@@ -32,6 +33,7 @@ if __name__=="__main__":
     rep_frac = args.repFrac
     N_replica=args.nrep
     inter_ori = args.interOri
+    nrep_init = args.nrep_init
 
     mu=2.0
     rc=1.5
@@ -68,9 +70,11 @@ if __name__=="__main__":
         ff_exp_phase[:num_beads, :num_beads] = ff_chain
         ff_exp_phase[num_beads:, num_beads:] = ff_rep
         ff_exp_phase[num_beads:, :start] = foriter1
-        ff_exp_phase[num_beads:, start:end] = np.random.normal(loc=inter_ori, scale=0.1,size=(rep_len, rep_len))
+        random_inter_sister = np.random.normal(loc=inter_ori, scale=0.1,size=(rep_len, rep_len))
+        random_inter_sister[random_inter_sister>0]=0.0
+        ff_exp_phase[num_beads:, start:end] = random_inter_sister
         ff_exp_phase[num_beads:, end:num_beads] = np.rot90(foriter2, 1)
-        ff_exp_phase = np.triu(ff_exp_phase) + np.triu(ff_exp_phase).T
+        ff_exp_phase = np.tril(ff_exp_phase) + np.tril(ff_exp_phase).T
         chain_lens = [num_beads, rep_len]
         chain_names=['M', 'D']
         isRing=[1, 0]
@@ -105,7 +109,7 @@ if __name__=="__main__":
 
     generator.save_top('input/topology.txt')
 
-    for replica in range(N_replica):
+    for replica in range(nrep_init, nrep_init+N_replica):
         print(f"Simulating replica {replica+1} ...")
         print("Initializing simulation object ...")
         sim = ChromatinDynamics(
@@ -160,7 +164,7 @@ if __name__=="__main__":
     # generate hic from replicas
     hic_sim=None
     idx=0
-    for replica in range(N_replica):
+    for replica in range(100):
         print("Reading replica ", replica)
         hic_file = Path(f'run_{replica}') / f"Pi_{replica}.txt"
         if not hic_file.exists(): continue
