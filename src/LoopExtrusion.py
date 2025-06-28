@@ -72,6 +72,7 @@ class Loop_Extruders:
         self.k_off = k_off
         self.k_hop = k_hop
         self.kstep_LE = kstep_LE
+        self.kstep_LE_factor = 1.0
         self.tau = tau
         self.v_LE = v_LE
         self.t_mesh = t_mesh
@@ -131,8 +132,10 @@ class Loop_Extruders:
                 'left_anchor_paused_time': 0.0, 
                 'right_anchor_paused_time': 0.0, 
                 'both_anchors_paused_time': 0.0,
-                'k_step_left': self.kstep_LE, 
+                'k_step_left': self.kstep_LE,
+                'k_step_left_factor': self.kstep_LE_factor, 
                 'k_step_right': self.kstep_LE,
+                'k_step_right_factor': self.kstep_LE_factor,
                 'v_left_anchor': self.v_LE, 
                 'v_right_anchor': self.v_LE,
                 'hop_left_factor': 1.0, 
@@ -255,11 +258,11 @@ class Loop_Extruders:
     
     def get_step_left_rate(self, leid):
         is_paused = self.loop_extruder_dict[leid]['is_left_anchor_paused']
-        return (not is_paused) * self.loop_extruder_dict[leid]['k_step_left']
+        return (not is_paused) * self.loop_extruder_dict[leid]['k_step_left_factor'] * self.loop_extruder_dict[leid]['k_step_left']
     
     def get_step_right_rate(self, leid):
         is_paused = self.loop_extruder_dict[leid]['is_right_anchor_paused']
-        return (not is_paused) * self.loop_extruder_dict[leid]['k_step_right']
+        return (not is_paused) * self.loop_extruder_dict[leid]['k_step_right_factor'] * self.loop_extruder_dict[leid]['k_step_right']
     
     def get_hop_left_rate(self, leid):
         factor = self.loop_extruder_dict[leid]["hop_left_factor"] 
