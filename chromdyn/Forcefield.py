@@ -375,7 +375,7 @@ class ForceFieldManager:
         type_list = [atom.element for atom in self.topology.atoms()]
         used_types = sorted(set(type_list))
         self.logger.info('-' * 50)
-        self.logger.info(f"Types detected in polymer: {used_types}")
+        self.logger.info(f"Number of unique types detected in polymer: {len(used_types)}")
 
         missing_types = [t for t in used_types if t not in type_labels]
         if missing_types:

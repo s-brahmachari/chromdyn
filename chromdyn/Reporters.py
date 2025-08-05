@@ -193,6 +193,13 @@ def save_pdb(chrom_dyn_obj, **kwargs):
             f"{chrom_dyn_obj.name}_{chrom_dyn_obj.simulation.currentStep}.pdb"
         )
     )
+
+    # Unique residue names for different chains
+    residue_names_by_chain = [
+        'GLY', 'ALA', 'SER', 'VAL', 'THR', 'LEU', 'ILE', 'ASN', 'GLN', 'ASP',
+        'GLU', 'PHE', 'TYR', 'TRP', 'CYS', 'MET', 'HIS', 'ARG', 'LYS', 'PRO'
+    ]
+
     # Get atomic positions
     state = chrom_dyn_obj.simulation.context.getState(getPositions=True)
     positions = state.getPositions(asNumpy=True).value_in_unit(unit.nanometer)
@@ -206,23 +213,28 @@ def save_pdb(chrom_dyn_obj, **kwargs):
         chain_index = -1
         for chain in topology.chains():
             chain_index += 1
-            if chain_index>9: chain_index=9
+            if chain_index > 9:
+                chain_id = '9'  # Reuse chainID
+            else:
+                chain_id = str(chain_index)
+
+            # Assign unique residue name per chain
+            res_name = residue_names_by_chain[chain_index % len(residue_names_by_chain)]
+
             for residue in chain.residues():
                 for atom in residue.atoms():
                     pos = positions[atom_index]
                     atom_serial = atom_index + 1
                     atom_name = 'CA'       # placeholder
-                    res_name = 'GLY'       # placeholder
-                    res_seq = 1 #int(residue.id) if residue.id else residue.index + 1
+                    res_seq = 1            # constant or can be residue.index + 1
                     element = 'C'          # consistent with 'CA'
 
                     pdb_line = (
-                        f"ATOM  {atom_serial:5d} {atom_name:^4s} {res_name:>3s} {str(chain_index):1s}"
+                        f"ATOM  {atom_serial:5d} {atom_name:^4s} {res_name:>3s} {chain_id:1s}"
                         f"{res_seq:4d}    {pos[0]:8.3f}{pos[1]:8.3f}{pos[2]:8.3f}  "
                         f"1.00  0.00           {element:>2s}\n"
                     )
                     pdb_file.write(pdb_line)
                     atom_index += 1
-            
 
         pdb_file.write("ENDMDL\n")
