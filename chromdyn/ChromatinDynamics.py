@@ -4,11 +4,11 @@ from openmm import System, Vec3
 from openmm.app import Simulation, Topology
 import openmm.unit as unit
 from typing import Optional, Tuple, List, Dict, Union, Any
-
+from numpy.typing import NDArray
 from Platforms import PlatformManager
 from Integrators import IntegratorManager
 from Forcefield import ForceFieldManager
-from Utilities import gen_structure, LogManager
+from Utilities import config_generator, LogManager
 from Reporters import SaveStructure, StabilityReporter, EnergyReporter
 
 class ChromatinDynamics:
@@ -52,7 +52,7 @@ class ChromatinDynamics:
         self.reporters: dict[str, object] = {}
 
     def simulation_setup(self,
-                         init_struct: str = 'randomwalk',
+                         init_struct: Union[str, NDArray] = 'randomwalk',
                          integrator: str = 'langevin',
                          temperature: float = 120.0,
                          timestep: float = 0.01,
@@ -80,10 +80,17 @@ class ChromatinDynamics:
         )
 
         self.logger.info("Setting up simulation context...")
-        positions = gen_structure(mode=init_struct, num_steps=self.num_particles, logger=self.logger)
-        self.simulation.context.setPositions(positions)
+        if isinstance(init_struct, str):
+            gen_config = config_generator()
+            positions, msg = gen_config.get_config(mode=init_struct, num_steps=self.num_particles)
+            
+        else:
+            assert init_struct.shape == (self.num_particles, 3), "init_struct shape != (num_particles,3)"
+            positions, msg = init_struct, "User defined initial configuration loaded"
+        
+        self.simulation.context.setPositions(positions)    
+        self.logger.info(msg)
         self.logger.info("Simulation context initialized.")
-
         self.print_force_info()
 
         if save_pos:
