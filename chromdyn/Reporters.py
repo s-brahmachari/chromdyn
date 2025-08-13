@@ -226,7 +226,7 @@ def save_pdb(chrom_dyn_obj, **kwargs):
                     pos = positions[atom_index]
                     atom_serial = atom_index + 1
                     atom_name = 'CA'       # placeholder
-                    res_seq = 1            # constant or can be residue.index + 1
+                    res_seq = residue.index + 1            # constant or can be residue.index + 1
                     element = 'C'          # consistent with 'CA'
 
                     pdb_line = (

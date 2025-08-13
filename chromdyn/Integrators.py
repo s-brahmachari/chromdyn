@@ -4,13 +4,11 @@ from Utilities import LogManager
 # Integrator Manager: Creates integrators for Brownian or Langevin dynamics
 # -------------------------------------------------------------------
 class IntegratorManager:
-    VALID_INTEGRATORS = ["langevin", "brownian", "active-brownian"]  # List of supported integrators
+    VALID_INTEGRATORS = ["langevin", "brownian", "active-langevin", "active-brownian"]  # List of supported integrators
     DEFAULT_PARAMS = {
         "temperature": 300.0,
         "friction": 0.1,
         "timestep": 0.01,
-        "tcorr": 1.0,
-        "Fact": 0.0  # Placeholder if needed in future
     }
 
     def __init__(self, logger=None, integrator='langevin', **kwargs):
@@ -24,6 +22,7 @@ class IntegratorManager:
         """
         self.logger = logger or LogManager().get_logger(__name__)
         self.logger.info(f"Creating integrator ...")
+        self.is_active = False
         if isinstance(integrator, str):
             assert integrator in self.VALID_INTEGRATORS, 'integrator name does not exist' 
             self.integrator_name = integrator
@@ -31,8 +30,6 @@ class IntegratorManager:
             self.temperature = kwargs.get("temperature", self.DEFAULT_PARAMS["temperature"])
             self.friction = kwargs.get("friction", self.DEFAULT_PARAMS["friction"])
             self.timestep = kwargs.get("timestep", self.DEFAULT_PARAMS["timestep"])
-            self.tcorr = kwargs.get("tcorr", self.DEFAULT_PARAMS["tcorr"])
-            self.Fact = kwargs.get("Fact", self.DEFAULT_PARAMS["Fact"])
             
             self.integrator = self.create_integrator(self.integrator_name)
 
@@ -42,7 +39,7 @@ class IntegratorManager:
             self.logger.info(f"Created custom integrator")
         # self.logger.info('-'*60)
 
-    def create_integrator(self, integrator):
+    def create_integrator(self, integrator:str):
         """
         Create and return an OpenMM integrator based on initialized settings.
 
@@ -52,23 +49,21 @@ class IntegratorManager:
         try:
             if integrator == "brownian":
                 # self.logger.info(f"Creating {integrator} ...")
-                self.logger.info(f"BrownianIntegrator: temperatute={self.temperature} | friction={self.friction} | timestep={self.timestep}")
+                self.logger.info(f"BrownianIntegrator: temperature={self.temperature} | friction={self.friction} | timestep={self.timestep}")
                 return BrownianIntegrator(self.temperature, self.friction, self.timestep)
 
             elif integrator == "langevin":
                 # self.logger.info(f"Creating {integrator} ...")
-                self.logger.info(f"LangevinIntegrator: temperatute={self.temperature} | friction={self.friction} | timestep={self.timestep}")
+                self.logger.info(f"LangevinIntegrator: temperature={self.temperature} | friction={self.friction} | timestep={self.timestep}")
                 return LangevinIntegrator(self.temperature, self.friction, self.timestep)
-
-            elif integrator == "active":
-                # self.logger.info(f"Creating {integrator} ...")
-                self.logger.info(f"ActiveBrownianIntegrator: temperatute={self.temperature} | friction={self.friction} | timestep={self.timestep} | corr_time={self.tcorr} | active_force={self.Fact}")
-                return ActiveBrownianIntegrator(
-                    temperature=self.temperature,
-                    collision_rate=self.friction,
-                    timestep=self.timestep,
-                    corr_time=self.tcorr
-                )
+            
+            elif integrator == "active-langevin":
+                self.logger.info(f"Active LangevinIntegrator: temperature={self.temperature} | friction={self.friction} | timestep={self.timestep}")
+                self.logger.info(f"Initialized active parameters: F=0.0 and t_corr=1.0.")
+                self.logger.info("These parameters are per dof variables and can be set any time using .set_active_params(F_seq, tau_seq)")
+                # self.logger.info("integrator.setPerDofVariableByName('t_corr', [Vec3(t,t,t) for t in tau_list]).")
+                self.is_active = True
+                return ActiveLangevinIntegrator(self.temperature, self.friction, self.timestep)
 
         except Exception as e:
             self.logger.exception(f"[ERROR] Failed to create integrator: {e}")
@@ -99,7 +94,8 @@ class ActiveBrownianIntegrator(CustomIntegrator):
         kbT = 0.008314 * temperature
         self.addGlobalVariable("kbT", kbT)
         self.addGlobalVariable("g", collision_rate)
-        self.addGlobalVariable("Ta", corr_time)
+        # self.addGlobalVariable("Ta", corr_time)
+        self.addPerDofVariable("Ta", corr_time)
         self.setConstraintTolerance(constraint_tolerance)
 
         # add attributes
@@ -124,3 +120,57 @@ class ActiveBrownianIntegrator(CustomIntegrator):
 
         self.addComputePerDof("x1", "x")  # save pre-constraint positions in x1
         self.addConstrainPositions()  # x is now constrained
+
+
+class ActiveLangevinIntegrator(CustomIntegrator):
+    def __init__(self, temperature, gamma, dt, corr_time=1.0):
+        super().__init__(dt)
+
+        # Globals
+        self.addGlobalVariable("kbT", 0.008314 * temperature)   # kJ/mol
+        self.addGlobalVariable("gamma", gamma)                  # friction (1/ps)
+        self.addGlobalVariable("c", 0)                          # exp(-gamma*dt), set each step
+        self.addGlobalVariable("one_minus_c2", 0)               # 1 - c^2
+        self.addGlobalVariable("halfdt", 0.5*dt)
+
+        # Per-DOF
+        self.addPerDofVariable("t_corr", corr_time)  # per-particle correlation time
+        self.addPerDofVariable("p", 0)            # active force (NOT a velocity)
+        self.addPerDofVariable("x1", 0)           # for constraints
+
+        # Optional: per-DOF active strength σ_p (RMS of p in steady state)
+        self.addPerDofVariable("F_act", 0)      # set from Python per particle (Vec3)
+
+        # Precompute c each step
+        self.addComputeGlobal("c", "exp(-gamma*dt)")
+        self.addComputeGlobal("one_minus_c2", "1 - c*c")
+
+        self.addUpdateContextState()
+        
+        # ---- Update active force p via exact OU ----
+        # p <- e^{-dt/τ} p + sqrt(1 - e^{-2dt/τ}) * σ_p * ξ
+        self.addComputePerDof("p", "exp(-halfdt/t_corr)*p + sqrt(1 - exp(-2*halfdt/t_corr)) * F_act * gaussian")
+
+        # ---- First half kick with conservative + active ----
+        self.addComputePerDof("v", "v + (f + p) * (halfdt / m)")
+
+        # ---- Drift ----
+        self.addComputePerDof("x", "x + v * dt")
+
+        # Enforce position constraints
+        self.addComputePerDof("x1", "x")
+        self.addConstrainPositions()
+        self.addComputePerDof("v", "v + (x - x1)/dt")
+
+        # ---- Langevin thermostat (Ornstein–Uhlenbeck on v) ----
+        # v <- c v + sqrt((1 - c^2) * kbT/m) * ξ
+        self.addComputePerDof("v", "c * v + sqrt(one_minus_c2 * kbT / m) * gaussian")
+
+        # Enforce velocity constraints (projects only v; p is untouched)
+        self.addConstrainVelocities()
+
+        # ---- Second half kick ----
+        self.addComputePerDof("v", "v + (f + p) * (halfdt / m)")
+        self.addConstrainVelocities()
+        
+        self.addComputePerDof("p", "exp(-halfdt/t_corr)*p + sqrt(1 - exp(-2*halfdt/t_corr)) * F_act * gaussian")

@@ -1,8 +1,9 @@
 import time
 from pathlib import Path
-from openmm import System
+from openmm import System, Vec3
 from openmm.app import Simulation, Topology
 import openmm.unit as unit
+from typing import Optional, Tuple, List, Dict, Union, Any
 
 from Platforms import PlatformManager
 from Integrators import IntegratorManager
@@ -55,6 +56,7 @@ class ChromatinDynamics:
                          integrator: str = 'langevin',
                          temperature: float = 120.0,
                          timestep: float = 0.01,
+                         friction: float = 0.1,
                          save_pos: bool = True,
                          save_energy: bool = True,
                          stability_report_interval: int = 500,
@@ -65,6 +67,7 @@ class ChromatinDynamics:
         self.integrator_manager = IntegratorManager(
             integrator=integrator,
             temperature=temperature,
+            friction=friction,
             logger=self.logger,
             timestep=timestep
         )
@@ -111,6 +114,26 @@ class ChromatinDynamics:
         self.simulation.reporters.append(self.reporters['stability'])
         self.logger.info(f"Stability reporter created: {path}")
 
+    def set_activity(self, F_seq: List, tau_seq: List):
+        
+        assert hasattr(self, 'simulation'), "Simulation object not set up! Call .simulation_setup() first!"
+        assert self.integrator_manager.is_active, "Choose active-langevin integrator while setting up simulation."
+        assert len(F_seq)==self.num_particles, "F_seq length differs from the number of system particles"
+        assert len(tau_seq)==self.num_particles, "tau_seq length differs from the number of system particles"
+        
+        self.integrator_manager.integrator.setPerDofVariableByName('t_corr', [Vec3(t,t,t) for t in tau_seq])
+        self.integrator_manager.integrator.setPerDofVariableByName('F_act', [Vec3(xx,xx,xx) for xx in F_seq])
+        
+        self.logger.info(f"Added active force and correlation times for {len(F_seq)} particles.")
+    
+    def get_active_params(self) -> Dict[str, Any]:
+        assert self.integrator_manager.is_active, "Activity not present in the simulation."
+        ret = {}
+        ret['t_corr'] = self.integrator_manager.integrator.getPerDofVariableByName('t_corr')
+        ret['F_act'] = self.integrator_manager.integrator.getPerDofVariableByName('F_act')
+        return ret
+        
+    
     def run(self, n_steps: int, verbose: bool = True, report: bool = True) -> float:
         """Runs the simulation and reports performance."""
         if not self.simulation:
@@ -139,8 +162,6 @@ class ChromatinDynamics:
 
         if not report:
             self.resume_reporters()
-
-        return steps_per_sec
 
     def pause_reporters(self) -> None:
         for name, reporter in self.reporters.items():

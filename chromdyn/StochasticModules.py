@@ -24,7 +24,7 @@ class LoopExtruder:
         k_off: float,
         k_hop: float,
         tau: float,
-        v: float = 4.0,
+        v: float = 3.0,
         k_step: float = 1.0,
         t_mesh: float = 0.001,
         temp: float = 0.0,
@@ -61,9 +61,9 @@ class LoopExtruder:
             self.active_anchor[inactive_anchor] = False
             
         # CTCF
-        self.CTCF_rule: Optional[bool] = None
-        self.ctcf_hop_factor: Optional[float] = None
-        self.ctcf_off_rate_factor: Optional[float] = None
+        self.CTCF_rule: Optional[bool] = True
+        self.ctcf_hop_factor: Optional[float] = 0.01
+        self.ctcf_off_rate_factor: Optional[float] = 0.01
 
         # dynamic state
         self.left_anchor: float = -1
@@ -421,6 +421,13 @@ class StochasticExtrusion:
                 self.extruders.remove(le)
                 self.lattice.remove_blockers(left, right)
 
+    def add_ctcf(self, loc: List[int], orientations: List[str]):
+        assert len(loc)==len(orientations), 'shape mismatch between ctcf loc and orientation lists'
+        
+        for site, orient in zip(loc, orientations):
+            assert (orient=='+' or orient=='-'), 'Orientations can only be + or - !'
+            self.lattice.immobile_blockers[int(site)] = {'type':'ctcf','orientation':f'{orient}'}
+        
     def create_rate_vector(self) -> Tuple[List[Tuple[LoopExtruder,str]], np.ndarray]:
         events,rates = [],[]
         for le in self.extruders:
