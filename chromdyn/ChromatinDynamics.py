@@ -44,7 +44,9 @@ class ChromatinDynamics:
 
         self.logger.info(f"System initialized with {self.num_particles} particles. Output directory: {self.output_dir}")
 
-        self.platform_manager = PlatformManager(platform_name, logger=self.logger)
+        self.platform_manager = PlatformManager(logger=self.logger)
+        self.platform_manager.set_platform(platform_name)
+        
         self.force_field_manager = ForceFieldManager(self.topology, self.system, logger=self.logger, Nonbonded_cutoff=5.0)
         self.logger.info("force_field_manager initialized. Use this to add forces before running setup.")
 

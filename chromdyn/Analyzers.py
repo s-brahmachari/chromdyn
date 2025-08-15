@@ -71,7 +71,6 @@ def compute_writhe_between_curves(curve1, curve2):
 
     return writhe
 
-
 def compute_writhe_trajectory(trajectory, closed=True, processes=None):
     if processes is None:
         processes = max(cpu_count() - 1, 1)
@@ -83,7 +82,7 @@ def compute_writhe_trajectory(trajectory, closed=True, processes=None):
     return results
 
 def load_traj(traj_file, d=1):
-    print('Loading trajectory ...')
+    # print('Loading trajectory ...')
     pos = []
     with h5py.File(str(traj_file), "r") as f:
         for key in sorted(f.keys()):
@@ -94,5 +93,22 @@ def load_traj(traj_file, d=1):
             except ValueError:
                 pass
     pos = np.array(pos)  
-    print('Trajectory shape:', pos.shape)
+    # print('Trajectory shape:', pos.shape)
     return pos
+
+
+def compute_RG(positions):
+    positions = np.asarray(positions)
+
+    if positions.ndim == 2:  # shape (N, 3)
+        center_of_mass = np.mean(positions, axis=0)
+        squared_distances = np.sum((positions - center_of_mass) ** 2, axis=1)
+        return float(np.sqrt(np.mean(squared_distances)))
+
+    elif positions.ndim == 3:  # shape (T, N, 3)
+        centers_of_mass = np.mean(positions, axis=1)  # shape (T, 3)
+        squared_distances = np.sum((positions - centers_of_mass[:, None, :]) ** 2, axis=2)  # (T, N)
+        return np.sqrt(np.mean(squared_distances, axis=1))  # shape (T,)
+
+    else:
+        raise ValueError(f"positions must have shape (N, 3) or (T, N, 3), got {positions.shape}")
