@@ -97,9 +97,11 @@ class StabilityReporter:
     
             seed = np.random.randint(100_000)
             simulation.context.setVelocitiesToTemperature(temperature, seed)
-            self.logger.warning(f"<<INSTABILITY | Reinitialized velocities>> at step {simulation.currentStep}: K.E. = {e_kinetic:.2f} | P.E. = {e_potential:.2f}")
             self.saveFile.write(f"<<INSTABILITY | Reinitialized velocities>> Step {simulation.currentStep}: K.E. = {e_kinetic:.2f} | P.E. = {e_potential:.2f}\n")
             self.saveFile.flush()
+            if simulation.currentStep % (self.interval * 100) == 0:
+                self.logger.warning(f"<<INSTABILITY | Reinitialized velocities>> at step {simulation.currentStep}: K.E. = {e_kinetic:.2f} | P.E. = {e_potential:.2f}")
+            
 
 class EnergyReporter:
     def __init__(
