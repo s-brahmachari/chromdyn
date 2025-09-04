@@ -186,7 +186,70 @@ class ForceFieldManager:
             restraintForce.addParticle(i, ())
 
         self.register_force(restraintForce, "FlatBottomHarmonic")
-            
+    
+    def add_custom_flat_bottom_harmonic(
+        self,
+        particle_indices: List[int],
+        ks: List[float],
+        r0s: List[float],
+        center: Tuple[float, float, float] = (0.0, 0.0, 0.0),
+        group: int = 1,
+    ) -> None:
+        """
+        Adds a flat-bottom harmonic potential with per-particle force constants (k)
+        and cutoff radii (r0). Particles beyond r0 from the center feel a harmonic
+        potential with spring constant k.
+
+        Parameters
+        ----------
+        particle_indices : list of int
+            Atom indices to which the potential will be applied.
+        ks : list of float
+            Force constants (k) for each selected atom (in kJ/mol/nm^2).
+        r0s : list of float
+            Flat-bottom cutoff radii (r0) for each selected atom (in nm).
+        center : tuple of float, default=(0,0,0)
+            Reference point for the spherical restraint.
+        group : int, default=1
+            Force group to assign the force to.
+        """
+        n_atoms = self.topology.getNumAtoms()
+
+        # --- sanity checks ---
+        if not (len(particle_indices) == len(ks) == len(r0s)):
+            raise ValueError("particle_indices, ks, and r0s must all have the same length")
+
+        if any(idx < 0 or idx >= n_atoms for idx in particle_indices):
+            raise ValueError(f"One or more indices are out of range (0..{n_atoms-1})")
+
+        self.logger.info('-' * 50)
+        self.logger.info("Adding Custom Flat-Bottom Harmonic potential with per-particle params")
+        self.logger.info(f"Group = {group}, Num particles = {len(particle_indices)}")
+
+        # Energy expression: flat-bottom harmonic
+        energy_expr = (
+            "step(r - rRes) * 0.5 * kR * (r - rRes)^2;"
+            "r = sqrt((x - x0)^2 + (y - y0)^2 + (z - z0)^2)"
+        )
+
+        restraintForce = CustomExternalForce(energy_expr)
+        restraintForce.setForceGroup(group)
+
+        # Global center parameters
+        restraintForce.addGlobalParameter('x0', center[0])
+        restraintForce.addGlobalParameter('y0', center[1])
+        restraintForce.addGlobalParameter('z0', center[2])
+
+        # Per-particle parameters: kR, rRes
+        restraintForce.addPerParticleParameter('kR')
+        restraintForce.addPerParticleParameter('rRes')
+
+        # Add only the requested particles with their per-particle params
+        for idx, k, r0 in zip(particle_indices, ks, r0s):
+            restraintForce.addParticle(idx, [k, r0])
+
+        self.register_force(restraintForce, "CustomFlatBottomHarmonic")
+    
     def add_cylindrical_confinement(self, r_cyl: float = 5.0, z_cyl: float = 10.0,
                                     k_cyl: float = 10.0, group: int = 1) -> None:
         """
