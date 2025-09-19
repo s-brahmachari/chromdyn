@@ -135,11 +135,16 @@ class ChromatinDynamics:
         
         self.logger.info(f"Added active force and correlation times for {len(F_seq)} particles.")
     
-    def get_active_params(self) -> Dict[str, Any]:
+    def get_active_params(self, mono_id: int = None) -> Dict[str, Any]:
         assert self.integrator_manager.is_active, "Activity not present in the simulation."
         ret = {}
-        ret['t_corr'] = self.integrator_manager.integrator.getPerDofVariableByName('t_corr')
-        ret['F_act'] = self.integrator_manager.integrator.getPerDofVariableByName('F_act')
+        if mono_id is None:
+            ret['t_corr'] = self.integrator_manager.integrator.getPerDofVariableByName('t_corr')
+            ret['F_act'] = self.integrator_manager.integrator.getPerDofVariableByName('F_act')
+        else:
+            assert mono_id < self.num_particles, f"inconsistent mono_id, system has {self.num_particles} particles"
+            ret['t_corr'] = self.integrator_manager.integrator.getPerDofVariableByName('t_corr')[mono_id]
+            ret['F_act'] = self.integrator_manager.integrator.getPerDofVariableByName('F_act')[mono_id]
         return ret
         
     
