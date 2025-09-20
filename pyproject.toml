@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=75", "wheel", "setuptools-scm>=8"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "chromdyn"                              # change if taken on PyPI
+description = "Tools for chromosome dynamics modeling and analysis"
+readme = { file = "README.md", content-type = "text/markdown" }
+requires-python = ">=3.9"
+license = { file = "LICENSE" }
+dependencies = [
+  "numpy>=1.26",
+  "scipy>=1.11",
+  "pandas>=2.0",
+]
+authors = [{ name = "Sumitabha Brahmachari", email = "you@example.com" }]
+keywords = ["chromosome", "dynamics", "biophysics", "polymer"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+]
+# Put runtime dependencies here (example commented out):
+# dependencies = ["numpy>=1.26", "scipy>=1.11", "matplotlib>=3.8"]
+
+# version comes from git tags via setuptools-scm
+dynamic = ["version"]
+
+[project.urls]
+Homepage = "https://github.com/s-brahmachari/chromdyn"
+Issues   = "https://github.com/s-brahmachari/chromdyn/issues"
+
+# Optional CLI (uncomment if you add __main__.py)
+# [project.scripts]
+# chromdyn = "chromdyn.__main__:main"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+exclude = ["tests*", "docs*", "notebooks*"]
+
+[tool.setuptools_scm]
+version_scheme = "post-release"
+local_scheme = "no-local-version"
+write_to = "chromdyn/_version.py"
