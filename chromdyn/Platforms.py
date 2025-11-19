@@ -5,7 +5,7 @@ from Utilities import LogManager
 # Platform Manager: Selects GPU/CPU platform and lists available platforms
 # -------------------------------------------------------------------
 class PlatformManager:
-    def __init__(self, logger=None):
+    def __init__(self, platform_name="CUDA", logger=None):
         """
         Initialize the PlatformManager.
         
@@ -13,12 +13,10 @@ class PlatformManager:
             platform_name (str): Name of the platform to use (e.g., "CUDA", "OpenCL", "CPU").
             logger (Logger, optional): Logger instance to use for logging.
         """
-        self.logger = logger or LogManager().get_logger(__name__)
-        self.available_platforms = self._get_available_platforms()
-        
-    def set_platform(self, platform_name="CUDA"):
         self.platform_name = platform_name
+        self.logger = logger or LogManager().get_logger(__name__)
         # self.logger.info("-"*60)
+        self.available_platforms = self._get_available_platforms()
         self._validate_platform()
         # self.logger.info("-"*60)
 
@@ -61,8 +59,7 @@ class PlatformManager:
         """
         List available OpenMM platforms and their estimated speed.
         """
-        self.logger.info('-'*80)
-        self.logger.info(f"Number of available OpenMM platforms: {len(self.available_platforms)}")
+        self.logger.info(f"Number of available OpenMM platforms: {len(self.available_platforms)}\n")
         header = f"{'Index':<8} {'Platform Name':<20} {'Speed (estimated)':<20}"
         self.logger.info(header)
         self.logger.info("-" * len(header))
@@ -72,4 +69,3 @@ class PlatformManager:
             speed = platform.getSpeed()
             line = f"{i:<8} {platform_name:<20} {speed:<20}"
             self.logger.info(line)
-        self.logger.info('-'*80)

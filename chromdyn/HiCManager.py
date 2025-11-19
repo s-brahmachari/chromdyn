@@ -5,6 +5,14 @@ from scipy.ndimage import median_filter, uniform_filter
 # from sklearn.preprocessing import normalize
 from scipy.spatial.distance import pdist, squareform
 import h5py
+from typing import Optional
+import multiprocessing
+
+try:
+    import cupy as cp
+    CUPY_AVAILABLE = True
+except ImportError:
+    CUPY_AVAILABLE = False
 
 class HiCManager:
     def __init__(self, logger=None,):
@@ -243,63 +251,168 @@ class HiCManager:
         inputs=[xyz[ii*sub_frames:(ii+1)*sub_frames,:,:] for ii in range(num_proc)]
         return inputs
     
-    def gen_hic_from_cndb(self, traj_file, mu, rc, p, parallel=True, skip_frames=1):
+    def gen_hic_from_cndb(
+        self, 
+        traj_file, 
+        mu, 
+        rc, 
+        p=None, 
+        platform='CPU', 
+        parallel: bool = True, # RE-INTRODUCED this parameter
+        skip_frames=1, 
+        batch_size: Optional[int] = None
+    ):
+        """
+        (Version 3.1: Corrected handling of the 'parallel' parameter for CPU mode)
+        Generates a Hi-C matrix from a CNDB trajectory file.
+
+        Args:
+            ... (your existing args)
+            platform (str): The computation platform. 'CPU' (default) or 'CUDA'.
+            parallel (bool): If platform is 'CPU', this flag determines whether to use
+                            multiprocessing (True) or run serially (False).
+                            Defaults to True.
+            skip_frames (int): ...
+            batch_size (int, optional): If platform is 'CUDA', specifies the number of frames
+                                        to process in each GPU batch for memory efficiency.
+                                        If None, processes all frames at once.
+        """
         xyz = self.cndb_to_numpy(traj_file, skip_frames=skip_frames)
-        serialize=False
-        if parallel:
-            try:
-                import multiprocessing
-                                
-                # Safer multiprocessing start method (avoid memory duplication)
-                multiprocessing.set_start_method("spawn", force=True)
-
-                # Limit processes based on trajectory size
-                # num_proc = min(multiprocessing.cpu_count(), 1 + xyz.shape[0] // 10)
-                num_proc = min(multiprocessing.cpu_count(), 32, 1 + xyz.shape[0] // 10)
-
-                # Split the trajectory BEFORE parallelizing
-                subtraj_list = self._divide_into_subtraj(xyz, num_proc)
-                self.logger.info(f"Using multiprocessing. Dividing into {num_proc} processes.")
-
-                
-                args_list = [(subtraj, mu, rc, p) for subtraj in subtraj_list]
-
-                # Initialize accumulator
-                hic = np.zeros((xyz.shape[1], xyz.shape[1]), dtype=np.float32)
-
-                # Use context manager for clean pool closure
-                with multiprocessing.Pool(processes=num_proc) as pool:
-                    for partial_result in pool.imap_unordered(_wrap_calc, args_list):
-                        hic += partial_result / num_proc  # running average
-
-                self.logger.info(f"Generated HiC matrix of shape: {hic.shape}")
-            except ModuleNotFoundError:
-                self.logger.warning("Module `multiprocessing` not found.")
-                serialize = True
-        else:
-            serialize=True
         
-        if serialize:
-            self.logger.info("Computing HiC serially...")
-            hic = _calc_HiC_from_traj_array(xyz, mu, rc, p)
-            self.logger.info(f"Generated HiC matrix of shape: {hic.shape}")
-    
+        if platform.upper() == 'CPU' and batch_size is not None:
+            self.logger.warning("`batch_size` is specified but `platform` is 'CPU'. The batching parameter will be ignored.")
+        
+        if platform.upper() == 'CUDA':
+            if CUPY_AVAILABLE and cp.cuda.runtime.getDeviceCount() > 0:
+                self.logger.info("Computing HiC on CUDA platform...")
+                hic = _calc_HiC_from_traj_array_gpu(xyz, mu, rc, p, batch_size=batch_size)
+                self.logger.info(f"Generated HiC matrix of shape: {hic.shape}")
+            else:
+                self.logger.warning("CUDA platform selected, but CuPy/GPU not available. Falling back to CPU.")
+                platform = 'CPU'
+        
+        if platform.upper() == 'CPU':
+            serialize = not parallel # Directly use the 'parallel' flag
+            
+            if parallel:
+                try:
+                    # This logic is now correctly controlled by the 'parallel' parameter
+                    multiprocessing.set_start_method("spawn", force=True)
+                    num_proc = min(multiprocessing.cpu_count(), 32, 1 + xyz.shape[0] // 10)
+                    subtraj_list = self._divide_into_subtraj(xyz, num_proc)
+                    self.logger.info(f"Using multiprocessing on CPU. Dividing into {num_proc} processes.")
+                    
+                    args_list = [(subtraj, mu, rc, p) for subtraj in subtraj_list]
+                    hic = np.zeros((xyz.shape[1], xyz.shape[1]), dtype=np.float32)
+
+                    with multiprocessing.Pool(processes=num_proc) as pool:
+                        total_frames = xyz.shape[0]
+                        results = pool.map(_wrap_calc, args_list)
+                        
+                        for i, subtraj in enumerate(subtraj_list):
+                            hic += results[i] * (subtraj.shape[0] / total_frames)
+
+                    self.logger.info(f"Generated HiC matrix of shape: {hic.shape}")
+
+                except (ModuleNotFoundError, RuntimeError) as e:
+                    self.logger.warning(f"Multiprocessing failed with error: {e}. Falling back to serial computation.")
+                    serialize = True
+            
+            if serialize:
+                self.logger.info("Computing HiC serially on CPU...")
+                hic = _calc_HiC_from_traj_array(xyz, mu, rc, p)
+                self.logger.info(f"Generated HiC matrix of shape: {hic.shape}")
+        
         return hic
 
-def _calc_prob(data, mu, rc, p):
-    # Compute condensed distance matrix
+def _calc_prob(data, mu, rc, p=None):
+    """
+    Calculates a Hi-C like contact probability matrix from 3D coordinate data.
+
+    This modified version supports two modes:
+    1. If 'p' is provided, it uses a hybrid model: a sigmoid function for distances
+       less than or equal to rc, and a power-law decay for distances greater than rc.
+    2. If 'p' is None, it uses only the sigmoid function for all distances.
+
+    Args:
+        data (np.ndarray): The input coordinate data, shape (N, 3).
+        mu (float): Steepness parameter for the sigmoid function.
+        rc (float): Cutoff distance for the sigmoid function.
+        p (float, optional): The exponent for the power-law decay. If None,
+                             only the sigmoid function is used. Defaults to None.
+
+    Returns:
+        np.ndarray: An N x N symmetric matrix of contact probabilities.
+    """
+    # Compute condensed distance matrix (upper triangle of the distance matrix)
     r = pdist(data, metric='euclidean')
     
-    # Compute probabilities for condensed distances
-    f_condensed = np.where(
-        r <= rc,
-        0.5 * (1 + np.tanh(mu * (rc - r))),
-        0.5 * (rc / r) ** p
-    )
+    # Check if the power-law exponent 'p' is provided
+    if p is not None:
+        # If p is provided, use the original conditional logic
+        # applying sigmoid for r <= rc and power-law for r > rc.
+        f_condensed = np.where(
+            r <= rc,
+            0.5 * (1 + np.tanh(mu * (rc - r))),
+            0.5 * (rc / r) ** p
+        )
+    else:
+        # If p is None, apply only the sigmoid-like function to all distances.
+        f_condensed = 0.5 * (1 + np.tanh(mu * (rc - r)))
 
-    # Convert to square symmetric matrix with zeros on the diagonal
+    # Convert the condensed (1D) array back to a square symmetric matrix
     f = squareform(f_condensed)
     return f
+
+# --- NEW GPU-ACCELERATED FUNCTION ---
+def _calc_HiC_from_traj_array_gpu(traj, mu, rc, p=None, batch_size: Optional[int] = None):
+    """
+    (Version 2.0: With optional batching for memory efficiency)
+    Fully vectorized Hi-C calculation on the GPU using CuPy.
+    """
+    traj_cp = cp.array(traj, dtype=cp.float32)
+    n_frames, n_beads, _ = traj_cp.shape
+
+    if batch_size is None:
+        # --- METHOD 1: Direct Vectorization (Fastest, High Memory Usage) ---
+        print("  Calculating Hi-C on GPU using direct vectorization...")
+        diffs = traj_cp[:, :, cp.newaxis, :] - traj_cp[:, cp.newaxis, :, :]
+        distances_all_frames = cp.linalg.norm(diffs, axis=-1)
+        
+        if p is not None:
+            prob_matrices = cp.where(distances_all_frames <= rc, 0.5 * (1 + cp.tanh(mu * (rc - distances_all_frames))), 0.5 * (rc / distances_all_frames)**p)
+        else:
+            prob_matrices = 0.5 * (1 + cp.tanh(mu * (rc - distances_all_frames)))
+        
+        prob_matrices[:, cp.arange(n_beads), cp.arange(n_beads)] = 0
+        hic_matrix_cp = cp.mean(prob_matrices, axis=0)
+
+    else:
+        # --- METHOD 2: Batched Processing (Memory-Efficient) ---
+        print(f"  Calculating Hi-C on GPU using batched processing (batch size: {batch_size})...")
+        cumulative_hic_sum = cp.zeros((n_beads, n_beads), dtype=cp.float32)
+        
+        for i in range(0, n_frames, batch_size):
+            batch_traj = traj_cp[i : i + batch_size]
+            
+            # Perform vectorized calculation on the smaller batch
+            diffs = batch_traj[:, :, cp.newaxis, :] - batch_traj[:, cp.newaxis, :, :]
+            distances_batch = cp.linalg.norm(diffs, axis=-1)
+            
+            if p is not None:
+                prob_batch = cp.where(distances_batch <= rc, 0.5 * (1 + cp.tanh(mu * (rc - distances_batch))), 0.5 * (rc / distances_batch)**p)
+            else:
+                prob_batch = 0.5 * (1 + cp.tanh(mu * (rc - distances_batch)))
+
+            prob_batch[:, cp.arange(n_beads), cp.arange(n_beads)] = 0
+
+            # Add the sum of this batch's results to the cumulative total
+            cumulative_hic_sum += cp.sum(prob_batch, axis=0)
+            
+        # Calculate the final average
+        hic_matrix_cp = cumulative_hic_sum / n_frames
+
+    return cp.asnumpy(hic_matrix_cp)
 
 # Function to wrap single-call processing (needed for Pool.map)
 def _wrap_calc(subtraj_mu_rc_p):

@@ -69,7 +69,12 @@ class LogManager:
         logger.info(char * width)
         logger.info(f"{title:^{width}}")  # Center the title
         logger.info(char * width)
-
+        
+def compute_RG(positions):
+    center_of_mass = np.mean(positions, axis=0)
+    squared_distances = np.sum((positions - center_of_mass) ** 2, axis=1)
+    Rg = np.sqrt(np.mean(squared_distances))
+    return Rg
 
 class config_generator:
     def __init__(self, max_restarts: int = 5000):

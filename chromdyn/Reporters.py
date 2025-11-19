@@ -1,19 +1,22 @@
 import numpy as np
 import h5py
+import json
 from openmm.app import Simulation
 from openmm import System, State
 import openmm.unit as unit
 from openmm import CMMotionRemover
 import os
-from Utilities import LogManager
-from Analyzers import compute_RG
+from Utilities import LogManager, compute_RG
 from pathlib import Path
 from typing import Union, Optional, Tuple
+from openmm import app
 
 class SaveStructure:
-    def __init__(self, reportFile: Union[str, Path], reportInterval: int = 1000):
+    def __init__(self, reportFile: Union[str, Path], reportInterval: int, PBC: bool,topology: app.Topology):
         self.filename: str = str(reportFile)
         self.reportInterval: int = reportInterval
+        self.topology = topology
+        self.PBC = PBC
         mode: str = self.filename.split('.')[-1].lower()
         if mode not in ['cndb']:
             raise ValueError(f"Unsupported file format: {mode}. Supported formats are 'cndb'.")
@@ -29,6 +32,80 @@ class SaveStructure:
                 os.rename(self.filename, backup_name)
 
             self.saveFile: h5py.File = h5py.File(self.filename, "w")
+        
+        # Initialize static datasets
+        self._save_types()
+        self._save_full_topology()
+
+    def _save_types(self):
+        """Extracts atom types (from element) and saves as a dataset."""
+        type_list = []
+        for atom in self.topology.atoms():
+            # Use element symbol as type if it's an Element object, else use string directly
+            t_str = atom.element if isinstance(atom.element, str) else atom.element.symbol
+            type_list.append(t_str)
+        
+        # Save as variable-length string dataset
+        dt = h5py.special_dtype(vlen=str) 
+        self.saveFile.create_dataset('types', data=np.array(type_list, dtype=dt))
+
+    def _save_full_topology(self):
+        """
+        Serializes the OpenMM Topology into a JSON string and saves it.
+        Structure:
+        {
+            "chains": [
+                {"index": 0, "id": "C1", "residues": [...]}
+            ],
+            "bonds": [[atom_idx1, atom_idx2], ...]
+        }
+        """
+        topology_data = {
+            "chains": [],
+            "bonds": []
+        }
+
+        # Helper to map Atom Object -> Global Index
+        atom_to_index = {atom: i for i, atom in enumerate(self.topology.atoms())}
+
+        # 1. Serialize Hierarchy (Chain -> Residue -> Atom)
+        for chain in self.topology.chains():
+            chain_dict = {
+                "index": chain.index,
+                "id": chain.id,
+                "residues": []
+            }
+            for res in chain.residues():
+                res_dict = {
+                    "index": res.index,
+                    "name": res.name,
+                    "id": res.id,
+                    "atoms": []
+                }
+                for atom in res.atoms():
+                    atom_dict = {
+                        "index": atom.index,
+                        "name": atom.name,
+                        "type": atom.element if isinstance(atom.element, str) else atom.element.symbol
+                    }
+                    res_dict["atoms"].append(atom_dict)
+                chain_dict["residues"].append(res_dict)
+            topology_data["chains"].append(chain_dict)
+
+        # 2. Serialize Bonds
+        # Store as list of [index_A, index_B]
+        for bond in self.topology.bonds():
+            a1_idx = atom_to_index[bond.atom1]
+            a2_idx = atom_to_index[bond.atom2]
+            topology_data["bonds"].append([a1_idx, a2_idx])
+
+        # 3. Save to HDF5 as JSON string
+        json_str = json.dumps(topology_data)
+        dt = h5py.special_dtype(vlen=str)
+        dset = self.saveFile.create_dataset('topology_json', shape=(1,), dtype=dt)
+        dset[0] = json_str
+
+        
     def close(self) -> None:
         self.saveFile.close()
     
@@ -49,8 +126,14 @@ class SaveStructure:
             data: np.ndarray = state.getPositions(asNumpy=True).value_in_unit(unit.nanometer)
             if self.mode == 'cndb':
                 self.saveFile[str(self.savestep)] = np.array(data)
+
+                if self.PBC:
+                    box = state.getPeriodicBoxVectors(asNumpy=True).value_in_unit(unit.nanometer)
+                    self.saveFile[str(self.savestep)].attrs['box'] = box
+                
             else:
                 raise ValueError(f"Unsupported mode: {self.mode}")
+            self.saveFile.flush()
             self.savestep += 1
                 
 class StabilityReporter:
@@ -97,11 +180,9 @@ class StabilityReporter:
     
             seed = np.random.randint(100_000)
             simulation.context.setVelocitiesToTemperature(temperature, seed)
+            self.logger.warning(f"<<INSTABILITY | Reinitialized velocities>> at step {simulation.currentStep}: K.E. = {e_kinetic:.2f} | P.E. = {e_potential:.2f}")
             self.saveFile.write(f"<<INSTABILITY | Reinitialized velocities>> Step {simulation.currentStep}: K.E. = {e_kinetic:.2f} | P.E. = {e_potential:.2f}\n")
             self.saveFile.flush()
-            if simulation.currentStep % (self.interval * 100) == 0:
-                self.logger.warning(f"<<INSTABILITY | Reinitialized velocities>> at step {simulation.currentStep}: K.E. = {e_kinetic:.2f} | P.E. = {e_potential:.2f}")
-            
 
 class EnergyReporter:
     def __init__(
@@ -196,7 +277,7 @@ def save_pdb(chrom_dyn_obj, **kwargs):
             f"{chrom_dyn_obj.name}_{chrom_dyn_obj.simulation.currentStep}.pdb"
         )
     )
-
+    PBC = kwargs.get('PBC', False)
     # Unique residue names for different chains
     residue_names_by_chain = [
         'GLY', 'ALA', 'SER', 'VAL', 'THR', 'LEU', 'ILE', 'ASN', 'GLN', 'ASP',
@@ -204,14 +285,22 @@ def save_pdb(chrom_dyn_obj, **kwargs):
     ]
 
     # Get atomic positions
-    state = chrom_dyn_obj.simulation.context.getState(getPositions=True)
+    state = chrom_dyn_obj.simulation.context.getState(getPositions=True, enforcePeriodicBox=PBC)
     positions = state.getPositions(asNumpy=True).value_in_unit(unit.nanometer)
     topology = chrom_dyn_obj.topology  # OpenMM Topology
 
     with open(filename, 'w') as pdb_file:
         pdb_file.write(f"TITLE     {chrom_dyn_obj.name}\n")
-        pdb_file.write(f"MODEL     {chrom_dyn_obj.simulation.currentStep}\n")
+        if PBC:
+            # 获取盒子向量 (假设是正交盒子，只取 x, y, z 长度)
+            box = chrom_dyn_obj.simulation.context.getState().getPeriodicBoxVectors()
+            a = box[0].x * 10.0 # nm to Angstrom for PDB
+            b = box[1].y * 10.0
+            c = box[2].z * 10.0
+            # PDB CRYST1 格式: lenA lenB lenC alpha beta gamma SpaceGroup
+            pdb_file.write(f"CRYST1{a:9.3f}{b:9.3f}{c:9.3f}  90.00  90.00  90.00 P 1           1\n")
 
+        pdb_file.write(f"MODEL     {chrom_dyn_obj.simulation.currentStep}\n")
         atom_index = 0
         chain_index = -1
         for chain in topology.chains():
