@@ -597,7 +597,7 @@ def _draw_generic_box(ax, box_vectors, color='k', alpha=0.5, linewidth=1.0):
 
 def visualize_pbc(traj, select_frame=0, axis_limits=None,
                   colors=None, outputName=None, isring=False, r=None,
-                  recenter=True, color_mode='chain'):
+                  recenter=True, color_mode='chain', types = None):
     """
     Visualize polymer chains with PBC box.
     
@@ -673,6 +673,9 @@ def visualize_pbc(traj, select_frame=0, axis_limits=None,
     if color_mode == 'type':
         # Get all types
         types_seq = getattr(traj, 'ChromSeq', getattr(traj, 'types', None))
+        # if types are provided, use them
+        if types is not None:
+            types_seq = types   
         if types_seq is None:
             print("Warning: 'type' mode requested but no types found. Switching to 'chain'.")
             color_mode = 'chain'
@@ -803,7 +806,7 @@ def visualize_pbc(traj, select_frame=0, axis_limits=None,
 
 def visualize_animation_pbc(traj, start_frame=0, end_frame=None, fps=20,
                             axis_limits=None, colors=None, outputName=None,
-                            isring=False, r=None, recenter=True, color_mode='chain'):
+                            isring=False, r=None, recenter=True, color_mode='chain', types = None):
     
     # --- 1. Data Loading ---
     if not hasattr(traj, 'topology') or traj.topology is None:
@@ -850,6 +853,9 @@ def visualize_animation_pbc(traj, start_frame=0, end_frame=None, fps=20,
 
     if color_mode == 'type':
         types_seq = getattr(traj, 'ChromSeq', getattr(traj, 'types', None))
+        # if types are provided, use them
+        if types is not None:
+            types_seq = types   
         if types_seq is None:
             color_mode = 'chain'
         else:
