@@ -1020,7 +1020,8 @@ def visualize_animation(traj, start_frame=0, end_frame=None, fps=20,
         scatters.append(sc)
         lines.append(ln)
 
-    _draw_generic_box(ax, box_vectors_range[0])
+    if PBC:
+        _draw_generic_box(ax, box_vectors_range[0])
 
     if color_mode == 'type':
         ax.legend(handles=type_legend_handles.values(), loc='best')
