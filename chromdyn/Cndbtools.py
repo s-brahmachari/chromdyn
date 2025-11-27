@@ -9,7 +9,7 @@ from scipy.spatial.distance import pdist
 import json
 from mpl_toolkits.mplot3d.art3d import Line3DCollection
 import matplotlib.colors as mcolors
-
+from Analyzers import compute_RG
 
 
 class TopologyData:
@@ -594,16 +594,31 @@ def _draw_generic_box(ax, box_vectors, color='k', alpha=0.5, linewidth=1.0):
 
 
 
-
-def visualize_pbc(traj, select_frame=0, axis_limits=None,
+# Universal visualization function with optional PBC(draw box)
+def visualize(traj, select_frame=0, axis_limits=None,
                   colors=None, outputName=None, isring=False, r=None,
-                  recenter=True, color_mode='chain', types = None):
+                  recenter=False, color_mode='chain', types = None, PBC=False):
     """
-    Visualize polymer chains with PBC box.
+    Universal visualization function for polymer chains with optional PBC box.
     
     Args:
-        color_mode (str): 'chain' (default) or 'type'.
+        traj: Trajectory object containing coordinate and topology data.
+        select_frame (int): Frame index to visualize (default: 0).
+        axis_limits (tuple): Manual axis limits as (x_min, x_max, y_min, y_max, z_min, z_max).
+        colors (list): Custom colors for chains.
+        outputName (str): If provided, save the plot to this filename instead of displaying.
+        isring (bool): If True, connect the last bead to the first bead (default: False).
+        r (float): Physical radius of beads in nm for size calculation.
+        recenter (bool): If True, recenter coordinates (default: True).
+        color_mode (str): 'chain' (default) or 'type' for coloring scheme.
+        types (list): Custom type sequence to override trajectory types.
+        PBC (bool): If True, draw periodic boundary box and use box-based recentering (default: False).
     """
+
+    if PBC:
+        recenter = True
+        print("PBC is enabled, automatically recentering.")
+
     # --- 1. Data & Topology Check ---
     if not hasattr(traj, 'topology') or traj.topology is None:
         print("Error: Topology not found in trajectory.")
@@ -645,17 +660,18 @@ def visualize_pbc(traj, select_frame=0, axis_limits=None,
         print(f"Error: No valid coordinate data found for frame {select_frame}.")
         return
 
-    # --- 3. Load Box Vectors ---
-    box_vectors = None
-    if hasattr(traj, 'box_vectors') and (traj.box_vectors is not None):
-        try:
-            box_vectors = traj.box_vectors[select_frame]
-        except:
-            pass # Fallback below
-    
-    if box_vectors is None:
-        print("Warning: No box vectors found. Assuming 100nm cube.")
-        box_vectors = np.eye(3) * 100.0
+    if PBC:
+        # --- 3. Load Box Vectors ---
+        box_vectors = None
+        if hasattr(traj, 'box_vectors') and (traj.box_vectors is not None):
+            try:
+                box_vectors = traj.box_vectors[select_frame]
+            except:
+                pass # Fallback below
+        
+        if box_vectors is None:
+            print("Warning: No box vectors found. Assuming 100nm cube.")
+            box_vectors = np.eye(3) * 100.0
 
     # --- 4. Recenter ---
     if recenter:
@@ -676,10 +692,12 @@ def visualize_pbc(traj, select_frame=0, axis_limits=None,
         # if types are provided, use them
         if types is not None:
             types_seq = types   
+            print(f"Using provided types: {types_seq}")
         if types_seq is None:
             print("Warning: 'type' mode requested but no types found. Switching to 'chain'.")
             color_mode = 'chain'
         else:
+            print(f"Using types from trajectory: {types_seq}")
             unique_types = sorted(list(set(types_seq)))
             cmap = plt.get_cmap('tab10')
             type_map = {t: cmap(i % 10) for i, t in enumerate(unique_types)}
@@ -745,20 +763,21 @@ def visualize_pbc(traj, select_frame=0, axis_limits=None,
         sc = ax.scatter(xs, ys, zs, alpha=0.8, s=initial_s, label=label_val, **kwargs_scatter)
         scatter_collections.append(sc)
 
-    # --- 7. Draw PBC Box ---
-    box_corners = _draw_generic_box(ax, box_vectors)
+    if PBC:
+        # --- 7. Draw PBC Box ---
+        box_corners = _draw_generic_box(ax, box_vectors)
 
-    # Labels & Legend
-    ax.set_xlabel("X (nm)"); ax.set_ylabel("Y (nm)"); ax.set_zlabel("Z (nm)")
-    
-    if color_mode == 'type':
-        ax.legend(handles=type_legend_handles.values(), loc='best')
-    elif color_mode == 'chain' and n_chains <= 10:
-        ax.legend(loc='best')
+        # Labels & Legend
+        ax.set_xlabel(r"X ($\sigma$)"); ax.set_ylabel(r"Y ($\sigma$)"); ax.set_zlabel(r"Z ($\sigma$)")
+        
+        if color_mode == 'type':
+            ax.legend(handles=type_legend_handles.values(), loc='best')
+        elif color_mode == 'chain' and n_chains <= 10:
+            ax.legend(loc='best')
 
-    title_str = f"Frame {select_frame} ({color_mode})"
-    if recenter: title_str += " (Recentered)"
-    ax.set_title(title_str)
+        title_str = f"Frame {select_frame} (c:{color_mode})"
+        if recenter: title_str += " (Recentered)"
+        ax.set_title(title_str)
 
     # --- 8. View & Limits ---
     if r is not None:
@@ -804,10 +823,35 @@ def visualize_pbc(traj, select_frame=0, axis_limits=None,
         plt.show() 
 
 
-def visualize_animation_pbc(traj, start_frame=0, end_frame=None, fps=20,
+def visualize_animation(traj, start_frame=0, end_frame=None, fps=20,
                             axis_limits=None, colors=None, outputName=None,
-                            isring=False, r=None, recenter=True, color_mode='chain', types = None):
+                            isring=False, r=None, recenter=True, 
+                            color_mode='chain', types = None, PBC = False):
+    """
+    Universal animation visualization function for polymer chains with optional PBC box.
     
+    Args:
+        traj: Trajectory object containing coordinate and topology data.
+        start_frame (int): Starting frame index (default: 0).
+        end_frame (int): Ending frame index (default: None, uses all frames).
+        fps (int): Frames per second for animation (default: 20).
+        axis_limits (tuple): Manual axis limits as (x_min, x_max, y_min, y_max, z_min, z_max).
+        colors (list): Custom colors for chains.
+        outputName (str): If provided, save animation to this filename.
+        isring (bool): If True, connect the last bead to the first bead (default: False).
+        r (float): Physical radius of beads in nm for size calculation.
+        recenter (bool): If True, recenter coordinates (default: True).
+        color_mode (str): 'chain' (default) or 'type' for coloring scheme.
+        types (list): Custom type sequence to override trajectory types.
+        PBC (bool): If True, draw periodic boundary box and use box-based recentering (default: False).
+    
+    Returns:
+        Animation object if no outputName is provided.
+    """
+    if PBC:
+        recenter = True
+        print("PBC is True, recentering coordinates automatically.")
+
     # --- 1. Data Loading ---
     if not hasattr(traj, 'topology') or traj.topology is None:
         print("Error: Topology not found.")
@@ -840,11 +884,12 @@ def visualize_animation_pbc(traj, start_frame=0, end_frame=None, fps=20,
     if not polymer_coords_all_chains_orig: return
     num_anim_frames = end_frame - start_frame
 
-    # --- 3. Load Box Vectors ---
-    if hasattr(traj, 'box_vectors') and (traj.box_vectors is not None):
-        box_vectors_range = traj.box_vectors[start_frame:end_frame]
-    else:
-        box_vectors_range = np.tile(np.eye(3) * 100.0, (num_anim_frames, 1, 1))
+    # --- 3. Load Box Vectors (if PBC)---
+    if PBC:
+        if hasattr(traj, 'box_vectors') and (traj.box_vectors is not None):
+            box_vectors_range = traj.box_vectors[start_frame:end_frame]
+        else:
+            box_vectors_range = np.tile(np.eye(3) * 100.0, (num_anim_frames, 1, 1))
 
     # --- 4. Color Setup ---
     chain_colors_list = [] 
@@ -879,16 +924,36 @@ def visualize_animation_pbc(traj, start_frame=0, end_frame=None, fps=20,
     all_frames_processed = []
     for i in range(num_anim_frames):
         frame_coords = [chain_data[i] for chain_data in polymer_coords_all_chains_orig]
-        box = box_vectors_range[i]
-        if recenter:
+        
+        if PBC and recenter:
+            box = box_vectors_range[i]
             processed = recenter_coordinates_v3(frame_coords, box)
             all_frames_processed.append(processed)
+        elif recenter:
+            # Simple recentering - move COM to origin
+            all_coords_flat = np.vstack([chain for chain in frame_coords 
+                                        if chain.ndim == 2 and chain.shape[1] == 3 and chain.size > 0])
+            if all_coords_flat.size > 0:
+                current_com = np.mean(all_coords_flat, axis=0)
+                processed = [chain - current_com if chain.size > 0 else chain for chain in frame_coords]
+                all_frames_processed.append(processed)
+            else:
+                all_frames_processed.append(frame_coords)
         else:
             all_frames_processed.append(frame_coords)
 
     # --- 6. Limits ---
     if axis_limits:
         x_min, x_max, y_min, y_max, z_min, z_max = axis_limits
+    elif PBC:
+        # Fast auto-limit using Frame 0 Box
+        v = box_vectors_range[0]
+        center = 0.5 * np.sum(v, axis=0)
+        max_span = max(np.linalg.norm(v[0]), np.linalg.norm(v[1]), np.linalg.norm(v[2]))
+        buffer = max_span * 0.6
+        x_min, x_max = center[0]-buffer, center[0]+buffer
+        y_min, y_max = center[1]-buffer, center[1]+buffer
+        z_min, z_max = center[2]-buffer, center[2]+buffer
     else:
         # Fast auto-limit using Frame 0 Box
         v = box_vectors_range[0]
@@ -989,3 +1054,57 @@ def visualize_animation_pbc(traj, start_frame=0, end_frame=None, fps=20,
         except:
             plt.show()
         return anim
+
+
+
+def compute_RG_type(traj):
+    """
+    Function to compute Radius of Gyration (Rg) classified by particle type.
+    
+    Parameters:
+        traj: Trajectory object, which must contain the following attributes:
+              - traj.xyz: Coordinate array with shape (T, N, 3)
+              - traj.ChromSeq: A list or array of length N, containing bead types (e.g., 'A', 'B')
+              
+    Returns:
+        results (dict): A dictionary containing Rg data.
+                        key: 'general' and each type name (e.g., 'A', 'B')
+                        value: Corresponding Rg numpy array (of length T)
+    """
+    # 1. Get coordinates and sequence
+    # Ensure xyz is numpy array
+    all_positions = np.asarray(traj.xyz(frames=[0, None, 1], beadSelection=None))
+    # Ensure ChromSeq is numpy array for boolean indexing
+    bead_types = np.asarray(traj.ChromSeq)
+    
+    # 2. Initialize result dictionary
+    results = {}
+    
+    # 3. Calculate 'general' Rg (all beads)
+    # Always calculate this
+    results['general'] = compute_RG(all_positions)
+    
+    # 4. Check if system is Homogeneous (Homogeneous)
+    # np.unique returns sorted unique type list
+    unique_types = np.unique(bead_types)
+    
+    # If type count is greater than 1, it's a Heterogeneous (Heterogeneous) system, need to calculate by type
+    if len(unique_types) > 1:
+        for t_type in unique_types:
+            # Create boolean mask (Boolean Mask)
+            # mask length equals beads count, True means current type
+            mask = (bead_types == t_type)
+            
+            # Slice
+            # Dimension meaning: [all frames, mask filtered column(beads), all coordinates]
+            subset_positions = all_positions[:, mask, :]
+            
+            # Ensure type name is string format as key
+            key_name = str(t_type)
+            
+            # Calculate Rg for this type and store in dictionary
+            results[key_name] = compute_RG(subset_positions)
+            
+    # If len(unique_types) == 1, loop is skipped, only returns general, avoid duplicate calculation
+            
+    return results
