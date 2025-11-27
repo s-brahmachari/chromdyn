@@ -787,11 +787,22 @@ def visualize(traj, select_frame=0, axis_limits=None,
 
     if axis_limits:
         x_min, x_max, y_min, y_max, z_min, z_max = axis_limits
-    else:
+    elif PBC:
         all_poly = np.vstack([c for c in polymer_coords if c.size > 0])
         all_points = np.vstack([all_poly, box_corners])
         min_ext = np.min(all_points, axis=0)
         max_ext = np.max(all_points, axis=0)
+        center = (min_ext + max_ext) / 2.0
+        span = max_ext - min_ext
+        max_span = np.max(span) if np.max(span) > 0 else 10.0
+        buffer = max_span * 0.55
+        x_min, x_max = center[0]-buffer, center[0]+buffer
+        y_min, y_max = center[1]-buffer, center[1]+buffer
+        z_min, z_max = center[2]-buffer, center[2]+buffer
+    else:
+        all_poly = np.vstack([c for c in polymer_coords if c.size > 0])
+        min_ext = np.min(all_poly, axis=0)
+        max_ext = np.max(all_poly, axis=0)
         center = (min_ext + max_ext) / 2.0
         span = max_ext - min_ext
         max_span = np.max(span) if np.max(span) > 0 else 10.0
@@ -955,14 +966,26 @@ def visualize_animation(traj, start_frame=0, end_frame=None, fps=20,
         y_min, y_max = center[1]-buffer, center[1]+buffer
         z_min, z_max = center[2]-buffer, center[2]+buffer
     else:
-        # Fast auto-limit using Frame 0 Box
-        v = box_vectors_range[0]
-        center = 0.5 * np.sum(v, axis=0)
-        max_span = max(np.linalg.norm(v[0]), np.linalg.norm(v[1]), np.linalg.norm(v[2]))
-        buffer = max_span * 0.6
-        x_min, x_max = center[0]-buffer, center[0]+buffer
-        y_min, y_max = center[1]-buffer, center[1]+buffer
-        z_min, z_max = center[2]-buffer, center[2]+buffer
+        # Auto-limit using all frames
+        all_points = []
+        for frame_coords in all_frames_processed:
+            for chain in frame_coords:
+                if chain.size > 0:
+                    all_points.append(chain)
+        
+        if all_points:
+            all_points = np.vstack(all_points)
+            min_ext = np.min(all_points, axis=0)
+            max_ext = np.max(all_points, axis=0)
+            center = (min_ext + max_ext) / 2.0
+            span = max_ext - min_ext
+            max_span = np.max(span) if np.max(span) > 0 else 10.0
+            buffer = max_span * 0.6
+            x_min, x_max = center[0]-buffer, center[0]+buffer
+            y_min, y_max = center[1]-buffer, center[1]+buffer
+            z_min, z_max = center[2]-buffer, center[2]+buffer
+        else:
+            x_min, x_max, y_min, y_max, z_min, z_max = -50, 50, -50, 50, -50, 50
 
     # --- 7. Setup Plot ---
     fig = plt.figure(figsize=(10, 8))
