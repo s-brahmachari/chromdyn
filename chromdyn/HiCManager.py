@@ -7,6 +7,7 @@ from scipy.spatial.distance import pdist, squareform
 import h5py
 from typing import Optional
 import multiprocessing
+from Cndbtools import ChromatinTrajectory
 
 try:
     import cupy as cp
@@ -325,44 +326,144 @@ class HiCManager:
         
         return hic
 
-def _calc_prob(data, mu, rc, p=None):
-    """
-    Calculates a Hi-C like contact probability matrix from 3D coordinate data.
+    # =========================================================================
+    # PBC Hi-C Generation (Smooth Probability + Minimum Image Convention)
+    # =========================================================================
+    def gen_pbc_hic_from_cndb(self, traj_file, mu, rc, p=None, platform='CPU', parallel=True, skip_frames=1, batch_size=None):
+        """
+        Generates a Hi-C matrix from a CNDB trajectory file using PBC (Minimum Image Convention)
+        and a smooth probability function (Sigmoid/Power-law).
 
-    This modified version supports two modes:
-    1. If 'p' is provided, it uses a hybrid model: a sigmoid function for distances
-       less than or equal to rc, and a power-law decay for distances greater than rc.
-    2. If 'p' is None, it uses only the sigmoid function for all distances.
+        It uses the standard ChromatinTrajectory class to load data and box vectors.
 
-    Args:
-        data (np.ndarray): The input coordinate data, shape (N, 3).
-        mu (float): Steepness parameter for the sigmoid function.
-        rc (float): Cutoff distance for the sigmoid function.
-        p (float, optional): The exponent for the power-law decay. If None,
-                             only the sigmoid function is used. Defaults to None.
+        Args:
+            traj_file (str): Path to .cndb file.
+            mu (float): Steepness parameter for the sigmoid function.
+            rc (float): Cutoff distance (nm) for the sigmoid transition.
+            p (float, optional): Power-law exponent for r > rc. If None, uses sigmoid everywhere.
+            platform (str): 'CPU' or 'CUDA'.
+            parallel (bool): Use multiprocessing for CPU.
+            skip_frames (int): Stride for reading frames.
+            batch_size (int): Batch size for GPU calculation.
+        """
+        # 1. Import the standard loader
+        try:
+            from Cndbtools import ChromatinTrajectory
+        except ImportError:
+            # Fallback: assume it's in the same package or user handles imports
+            self.logger.warning("Could not import ChromatinTrajectory from chromdyn_pbc.tools. Trying global scope.")
+            # If ChromatinTrajectory is not imported, this will raise NameError, which is expected behavior
+            # if the environment is not set up correctly.
 
-    Returns:
-        np.ndarray: An N x N symmetric matrix of contact probabilities.
-    """
-    # Compute condensed distance matrix (upper triangle of the distance matrix)
-    r = pdist(data, metric='euclidean')
-    
-    # Check if the power-law exponent 'p' is provided
-    if p is not None:
-        # If p is provided, use the original conditional logic
-        # applying sigmoid for r <= rc and power-law for r > rc.
-        f_condensed = np.where(
-            r <= rc,
-            0.5 * (1 + np.tanh(mu * (rc - r))),
-            0.5 * (rc / r) ** p
-        )
-    else:
-        # If p is None, apply only the sigmoid-like function to all distances.
-        f_condensed = 0.5 * (1 + np.tanh(mu * (rc - r)))
+        self.logger.info(f"Computing PBC Hi-C with mu={mu}, rc={rc}, p={p}...")
+        
+        # 2. Load Data using Standard Class
+        traj = ChromatinTrajectory(traj_file)
+        
+        # Get Coordinates: (N_frames, N_beads, 3)
+        # traj.xyz handles the slicing internally via frames=[start, end, step]
+        xyz = traj.xyz(frames=[0, None, skip_frames])
+        
+        # Get Box Vectors: (N_frames, 3, 3)
+        if traj.box_vectors is not None:
+            # Slice the box vectors to match the skip_frames of coordinates
+            boxes = traj.box_vectors[::skip_frames]
+        else:
+            self.logger.warning("traj.box_vectors is None. Assuming infinite box (Standard Euclidean).")
+            # Create dummy huge boxes to effectively disable PBC
+            boxes = np.tile(np.eye(3) * 999999.9, (xyz.shape[0], 1, 1))
+            
+        # Close the trajectory file handle as we have loaded data into memory
+        traj.close()
+        
+        self.logger.info(f"Trajectory shape: {xyz.shape}, Box data shape: {boxes.shape}")
 
-    # Convert the condensed (1D) array back to a square symmetric matrix
-    f = squareform(f_condensed)
-    return f
+        # 3. Computation (Dispatch to CPU/GPU)
+        hic = None
+
+        # --- CUDA Platform ---
+        if platform.upper() == 'CUDA':
+            if CUPY_AVAILABLE and cp.cuda.runtime.getDeviceCount() > 0:
+                self.logger.info("Computing PBC HiC on GPU...")
+                hic = _calc_pbc_hic_gpu(xyz, boxes, mu, rc, p, batch_size=batch_size)
+            else:
+                self.logger.warning("CUDA not available. Falling back to CPU.")
+                platform = 'CPU'
+
+        # --- CPU Platform ---
+        if platform.upper() == 'CPU':
+            if parallel:
+                try:
+                    multiprocessing.set_start_method("spawn", force=True)
+                    num_proc = min(multiprocessing.cpu_count(), 32, max(1, xyz.shape[0] // 10))
+                    
+                    # Split both coordinates and boxes for multiprocessing
+                    sub_xyz_list = self._divide_into_subtraj(xyz, num_proc)
+                    sub_box_list = self._divide_into_subtraj(boxes, num_proc)
+                    
+                    self.logger.info(f"Using multiprocessing on CPU ({num_proc} processes).")
+                    
+                    # Pass mu, rc, p to workers
+                    args_list = [(sub_xyz_list[i], sub_box_list[i], mu, rc, p) for i in range(num_proc)]
+                    
+                    hic = np.zeros((xyz.shape[1], xyz.shape[1]), dtype=np.float32)
+                    
+                    with multiprocessing.Pool(processes=num_proc) as pool:
+                        results = pool.map(_wrap_calc_pbc, args_list)
+                        total_frames = xyz.shape[0]
+                        for i, res in enumerate(results):
+                            weight = sub_xyz_list[i].shape[0] / total_frames
+                            hic += res * weight
+                            
+                except Exception as e:
+                    self.logger.warning(f"Multiprocessing failed: {e}. Falling back to serial.")
+                    parallel = False
+            
+            if not parallel:
+                self.logger.info("Computing PBC HiC serially on CPU...")
+                hic = _calc_pbc_hic_cpu_serial(xyz, boxes, mu, rc, p)
+
+        self.logger.info(f"Generated PBC HiC matrix of shape: {hic.shape}")
+        return hic
+        
+    def _calc_prob(data, mu, rc, p=None):
+        """
+        Calculates a Hi-C like contact probability matrix from 3D coordinate data.
+
+        This modified version supports two modes:
+        1. If 'p' is provided, it uses a hybrid model: a sigmoid function for distances
+        less than or equal to rc, and a power-law decay for distances greater than rc.
+        2. If 'p' is None, it uses only the sigmoid function for all distances.
+
+        Args:
+            data (np.ndarray): The input coordinate data, shape (N, 3).
+            mu (float): Steepness parameter for the sigmoid function.
+            rc (float): Cutoff distance for the sigmoid function.
+            p (float, optional): The exponent for the power-law decay. If None,
+                                only the sigmoid function is used. Defaults to None.
+
+        Returns:
+            np.ndarray: An N x N symmetric matrix of contact probabilities.
+        """
+        # Compute condensed distance matrix (upper triangle of the distance matrix)
+        r = pdist(data, metric='euclidean')
+        
+        # Check if the power-law exponent 'p' is provided
+        if p is not None:
+            # If p is provided, use the original conditional logic
+            # applying sigmoid for r <= rc and power-law for r > rc.
+            f_condensed = np.where(
+                r <= rc,
+                0.5 * (1 + np.tanh(mu * (rc - r))),
+                0.5 * (rc / r) ** p
+            )
+        else:
+            # If p is None, apply only the sigmoid-like function to all distances.
+            f_condensed = 0.5 * (1 + np.tanh(mu * (rc - r)))
+
+        # Convert the condensed (1D) array back to a square symmetric matrix
+        f = squareform(f_condensed)
+        return f
 
 # --- NEW GPU-ACCELERATED FUNCTION ---
 def _calc_HiC_from_traj_array_gpu(traj, mu, rc, p=None, batch_size: Optional[int] = None):
@@ -427,6 +528,113 @@ def _calc_HiC_from_traj_array(traj, mu, rc, p):
         Prob += _calc_prob(snapshot, mu, rc, p)
     Prob=Prob/(ii+1)
     return Prob
+
+
+
+# =============================================================================
+# Helper Functions for PBC Hi-C (Smooth Probability + MIC)
+# =============================================================================
+
+def _mic_distance(pos, box):
+    """
+    Calculates Euclidean distance matrix using Minimum Image Convention.
+    pos: (N, 3)
+    box: (3, 3) - The full box matrix from traj.box_vectors
+    Returns: (N, N) distance matrix
+    """
+    # Extract diagonal (Lx, Ly, Lz) for orthogonal PBC calculation.
+    # OpenMM default periodic boxes are usually diagonal or represented as such here.
+    # Broadcasting requires (3,) or (1, 3)
+    L = np.diag(box) 
+        
+    diff = pos[:, np.newaxis, :] - pos[np.newaxis, :, :]
+    
+    # MIC correction: diff - L * round(diff / L)
+    # This assumes an orthogonal box.
+    diff -= L * np.round(diff / L)
+    
+    return np.linalg.norm(diff, axis=-1)
+
+def _calc_pbc_hic_cpu_serial(traj, boxes, mu, rc, p):
+    n_beads = traj.shape[1]
+    total_prob = np.zeros((n_beads, n_beads), dtype=np.float32)
+    
+    for i in range(traj.shape[0]):
+        # 1. Calculate Distance with PBC
+        r = _mic_distance(traj[i], boxes[i])
+        
+        # 2. Apply Probability Function (Sigmoid / Power-law)
+        if p is not None:
+            # Safe division for power law
+            with np.errstate(divide='ignore', invalid='ignore'):
+                term_power = 0.5 * (rc / r) ** p
+            term_power[r == 0] = 0.0 # Fix diagonal
+            
+            prob = np.where(
+                r <= rc,
+                0.5 * (1 + np.tanh(mu * (rc - r))),
+                term_power
+            )
+        else:
+            prob = 0.5 * (1 + np.tanh(mu * (rc - r)))
+            
+        total_prob += prob
+        
+    return total_prob / traj.shape[0]
+
+def _wrap_calc_pbc(args):
+    sub_xyz, sub_box, mu, rc, p = args
+    return _calc_pbc_hic_cpu_serial(sub_xyz, sub_box, mu, rc, p)
+
+def _calc_pbc_hic_gpu(traj, boxes, mu, rc, p=None, batch_size=None):
+    """
+    GPU implementation of PBC Hi-C with smooth probability.
+    """
+    traj_cp = cp.array(traj, dtype=cp.float32)
+    
+    # Extract diagonal lengths for MIC from the (N, 3, 3) boxes array
+    # Resulting shape: (N_frames, 3)
+    boxes_diag_cp = cp.array(np.array([np.diag(b) for b in boxes]), dtype=cp.float32)
+    
+    n_frames, n_beads, _ = traj_cp.shape
+    
+    if batch_size is None:
+        batch_size = n_frames 
+
+    cumulative_prob = cp.zeros((n_beads, n_beads), dtype=cp.float32)
+
+    for i in range(0, n_frames, batch_size):
+        end = min(i + batch_size, n_frames)
+        batch_pos = traj_cp[i:end]      # (B, N, 3)
+        batch_box = boxes_diag_cp[i:end] # (B, 3)
+        
+        # Loop inside batch to manage memory (N^2 expansion is large)
+        for j in range(batch_pos.shape[0]):
+            pos = batch_pos[j] # (N, 3)
+            box = batch_box[j] # (3,)
+            
+            # 1. MIC Distance
+            diff = pos[:, cp.newaxis, :] - pos[cp.newaxis, :, :]
+            diff -= box * cp.round(diff / box)
+            r = cp.linalg.norm(diff, axis=-1)
+            
+            # 2. Probability Function
+            if p is not None:
+                term_power = 0.5 * (rc / (r + 1e-10)) ** p 
+                prob = cp.where(
+                    r <= rc,
+                    0.5 * (1 + cp.tanh(mu * (rc - r))),
+                    term_power
+                )
+            else:
+                prob = 0.5 * (1 + cp.tanh(mu * (rc - r)))
+            
+            cumulative_prob += prob
+            
+    hic_matrix = cumulative_prob / n_frames
+    return cp.asnumpy(hic_matrix)
+
+
 
 # def _calc_prob(data, mu, rc, p):
 #     r = distance.cdist(data, data, 'euclidean')

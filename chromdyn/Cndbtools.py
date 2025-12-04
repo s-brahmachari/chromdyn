@@ -10,7 +10,7 @@ import json
 from mpl_toolkits.mplot3d.art3d import Line3DCollection
 import matplotlib.colors as mcolors
 from Analyzers import compute_RG
-
+import itertools
 
 class TopologyData:
     """
@@ -1132,3 +1132,206 @@ def compute_RG_type(traj):
     # If len(unique_types) == 1, loop is skipped, only returns general, avoid duplicate calculation
             
     return results
+
+
+
+def visualize_pbc_images(traj, select_frame=0, n_layers=1, 
+                         image_alpha=0.15, image_style='scatter',
+                         axis_limits=None, colors=None, outputName=None, 
+                         isring=False, r=None, recenter=True, 
+                         color_mode='chain', types=None):
+    """
+    Visualize central polymer AND periodic images with correct physical sizing.
+    """
+    
+    # --- 1. Data Loading ---
+    if not hasattr(traj, 'topology') or traj.topology is None:
+        print("Error: Topology not found."); return
+
+    # Check Box
+    box_vectors = None
+    if hasattr(traj, 'box_vectors') and (traj.box_vectors is not None):
+        try: box_vectors = traj.box_vectors[select_frame]
+        except: pass
+    if box_vectors is None: print("Error: No box vectors."); return
+
+    # Load Coords
+    chain_info = traj.topology.chain_info
+    bead_counts = [c[1] for c in chain_info]
+    cumulative_indices = np.cumsum([0] + bead_counts)
+    chain_selections = [np.arange(s, e).tolist() for s, e in zip(cumulative_indices[:-1], cumulative_indices[1:])]
+    
+    polymer_coords_orig = []
+    try:
+        for sel in chain_selections:
+            data = traj.xyz(frames=[select_frame, select_frame + 1, 1], beadSelection=sel)
+            if data.shape[0] > 0: polymer_coords_orig.append(np.nan_to_num(data[0]))
+            else: polymer_coords_orig.append(np.array([]))
+    except Exception as e: print(f"Error loading coords: {e}"); return
+
+    # --- 2. Recenter ---
+    if recenter:
+        polymer_coords = recenter_coordinates_v3(polymer_coords_orig, box_vectors)
+    else:
+        polymer_coords = polymer_coords_orig
+
+    # --- 3. Color Setup ---
+    n_chains = len(polymer_coords)
+    chain_colors_list = []
+    bead_colors_list = []
+    type_legend_handles = {}
+
+    if color_mode == 'type':
+        types_seq = types if types is not None else getattr(traj, 'ChromSeq', getattr(traj, 'types', None))
+        if types_seq is None: color_mode = 'chain'
+        else:
+            unique_types = sorted(list(set(types_seq)))
+            cmap = plt.get_cmap('tab10')
+            type_map = {t: cmap(i % 10) for i, t in enumerate(unique_types)}
+            all_bead_colors = np.array([type_map[t] for t in types_seq])
+            for sel in chain_selections: bead_colors_list.append(all_bead_colors[sel])
+            for t, c in type_map.items():
+                type_legend_handles[t] = plt.Line2D([0], [0], marker='o', color='w', markerfacecolor=c, markersize=10, label=f"Type {t}")
+
+    if color_mode == 'chain':
+        if colors is None:
+            cmap = plt.get_cmap('tab10')
+            chain_colors_list = [cmap(i % 10) for i in range(n_chains)]
+        else:
+            chain_colors_list = colors
+
+    # --- 4. Plotting Setup ---
+    fig = plt.figure(figsize=(12, 10))
+    ax = fig.add_subplot(111, projection='3d')
+
+    shifts = list(itertools.product(range(-n_layers, n_layers + 1), repeat=3))
+    vec_a, vec_b, vec_c = box_vectors[0], box_vectors[1], box_vectors[2]
+
+    # Store artists to update sizes later
+    central_scatters = []
+    image_scatters = []
+
+    def plot_chain(coords, c_mode, c_idx, alpha, is_central, style):
+        if coords.size == 0: return
+        xs, ys, zs = coords[:, 0], coords[:, 1], coords[:, 2]
+        
+        # Color Logic
+        if c_mode == 'chain':
+            base_color = chain_colors_list[c_idx]
+            c_scatter = base_color
+            c_line = base_color
+        else:
+            c_scatter = bead_colors_list[c_idx]
+            c_line = 'gray'
+
+        # 1. Draw Lines (Bonds)
+        # Central: Standard width. Images: Thin.
+        lw = 2.0 if is_central else 1.0
+        # Images: Faint lines. If style is 'scatter', make lines even fainter to emphasize beads.
+        l_alpha = 0.7 if is_central else (alpha * 0.5 if style == 'scatter' else alpha)
+        
+        if isring:
+            ax.plot(np.append(xs, xs[0]), np.append(ys, ys[0]), np.append(zs, zs[0]),
+                    color=c_line, alpha=l_alpha, linewidth=lw)
+        else:
+            ax.plot(xs, ys, zs, color=c_line, alpha=l_alpha, linewidth=lw)
+
+        # 2. Draw Scatter (Beads)
+        # Logic: Always draw for central. For images, only if style is 'scatter'.
+        if is_central or style == 'scatter':
+            # Initial size placeholder (will be updated)
+            s_init = 1 
+            sc_alpha = 0.8 if is_central else alpha
+            
+            kwargs = {'alpha': sc_alpha, 's': s_init}
+            if c_mode == 'chain': kwargs['color'] = c_scatter
+            else: kwargs['c'] = c_scatter
+
+            sc = ax.scatter(xs, ys, zs, **kwargs)
+            
+            # Categorize for later resizing
+            if is_central: central_scatters.append(sc)
+            else: image_scatters.append(sc)
+
+    # --- 5. Plotting Loop ---
+    print(f"Plotting {len(shifts)} lattice copies...")
+    all_plotted_points = []
+
+    for (i_grid, j_grid, k_grid) in shifts:
+        is_central = (i_grid == 0 and j_grid == 0 and k_grid == 0)
+        shift_vec = i_grid * vec_a + j_grid * vec_b + k_grid * vec_c
+        
+        for c_idx, chain_coords in enumerate(polymer_coords):
+            shifted_chain = chain_coords + shift_vec
+            if shifted_chain.size > 0: all_plotted_points.append(shifted_chain[::5]) # Downsample for limits
+            
+            plot_chain(shifted_chain, color_mode, c_idx, 
+                       alpha=image_alpha, is_central=is_central, style=image_style)
+
+        if is_central:
+            corners = _draw_generic_box(ax, box_vectors, color='k', alpha=0.8, linewidth=1.5)
+            all_plotted_points.append(corners)
+
+    # --- 6. Limits & Projection ---
+    if axis_limits:
+        x_min, x_max, y_min, y_max, z_min, z_max = axis_limits
+    else:
+        if all_plotted_points:
+            all_pts = np.vstack(all_plotted_points)
+            min_ext, max_ext = np.min(all_pts, axis=0), np.max(all_pts, axis=0)
+            center = (min_ext + max_ext) / 2.0
+            max_span = np.max(max_ext - min_ext)
+            if max_span == 0: max_span = 10.0
+            buffer = max_span * 0.55
+            x_min, x_max = center[0]-buffer, center[0]+buffer
+            y_min, y_max = center[1]-buffer, center[1]+buffer
+            z_min, z_max = center[2]-buffer, center[2]+buffer
+        else:
+            x_min, x_max, y_min, y_max, z_min, z_max = -10, 10, -10, 10, -10, 10
+
+    ax.set_xlim(x_min, x_max); ax.set_ylim(y_min, y_max); ax.set_zlim(z_min, z_max)
+    ax.set_xlabel(r"X ($\sigma$)"); ax.set_ylabel(r"Y ($\sigma$)"); ax.set_zlabel(r"Z ($\sigma$)")
+    
+    if r is not None:
+        ax.set_proj_type('ortho'); ax.view_init(elev=30, azim=-45)
+    else:
+        ax.set_proj_type('persp')
+    ax.set_box_aspect([1, 1, 1])
+
+    if color_mode == 'type': ax.legend(handles=type_legend_handles.values(), loc='upper right')
+    elif color_mode == 'chain' and n_chains <= 5: ax.legend(loc='upper right')
+    ax.set_title(f"PBC Visualization ({n_layers} layers) - {image_style}")
+
+    # --- 7. Apply Physical Size (The Fix) ---
+    if r is not None:
+        fig.canvas.draw() # Force render to get transforms
+        data_range = max(x_max - x_min, y_max - y_min, z_max - z_min)
+        bbox = ax.get_window_extent()
+        
+        if bbox and data_range > 0:
+            points_per_unit = (bbox.width * 72 / fig.get_dpi()) / data_range
+            # Calculate physical area (s is area in points^2)
+            s_phys = np.pi * ((r * points_per_unit) ** 2)
+            s_phys = np.clip(s_phys, 0.01, 50000)
+            
+            # Apply to Central (Full Size)
+            for sc in central_scatters:
+                sc.set_sizes(np.full(len(sc.get_offsets()), s_phys))
+            
+            # Apply to Images (Scaled Down for visual clarity)
+            # Factor 0.4 means radius is ~63% of central, looks good for "background"
+            s_image = s_phys * 0.4 
+            for sc in image_scatters:
+                sc.set_sizes(np.full(len(sc.get_offsets()), s_image))
+    else:
+        # Default size if r is not provided
+        for sc in central_scatters: sc.set_sizes([20])
+        for sc in image_scatters: sc.set_sizes([10])
+
+    # --- 8. Output ---
+    if outputName:
+        plt.savefig(outputName, dpi=150)
+        print(f"Plot saved to {outputName}")
+        plt.close(fig)
+    else:
+        plt.show()

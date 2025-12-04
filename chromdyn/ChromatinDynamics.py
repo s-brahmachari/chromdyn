@@ -118,7 +118,12 @@ class ChromatinDynamics:
             #pos[:, 2] = pos[:, 2] % Lz
             positions = pos
 
-        self.simulation.context.setPositions(positions)   
+        self.simulation.context.setPositions(positions) 
+        # Minimize energy to resolve PBC overlaps  
+        self.logger.info("Minimizing energy to resolve PBC overlaps...")
+        self.simulation.minimizeEnergy(maxIterations=1000)
+        self.simulation.currentStep = 0 
+        
         self.logger.info(msg)
         self.logger.info("Simulation context initialized.")
         self.print_force_info()
