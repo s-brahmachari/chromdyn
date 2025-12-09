@@ -1,6 +1,6 @@
 import numpy as np
 import os
-from Utilities import LogManager
+from .Utilities import LogManager
 from scipy.ndimage import median_filter, uniform_filter
 # from sklearn.preprocessing import normalize
 from scipy.spatial.distance import pdist, squareform

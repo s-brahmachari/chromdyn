@@ -2,7 +2,7 @@ from openmm import System, Discrete2DFunction, HarmonicBondForce, CustomNonbonde
 from openmm.app import Topology
 import numpy as np
 import pandas as pd
-from Utilities import LogManager
+from .Utilities import LogManager
 from typing import Optional, Tuple, List, Dict, Union, Any
 
 class ForceFieldManager:

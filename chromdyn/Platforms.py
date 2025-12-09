@@ -1,5 +1,5 @@
 from openmm import Platform
-from Utilities import LogManager
+from .Utilities import LogManager
 
 # -------------------------------------------------------------------
 # Platform Manager: Selects GPU/CPU platform and lists available platforms

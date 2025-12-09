@@ -5,8 +5,8 @@ from openmm import System, State
 import openmm.unit as unit
 from openmm import CMMotionRemover
 import os
-from Utilities import LogManager
-from Analyzers import compute_RG
+from .Utilities import LogManager
+from .Analyzers import compute_RG
 from pathlib import Path
 from typing import Union, Optional, Tuple
 

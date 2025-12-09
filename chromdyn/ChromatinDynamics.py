@@ -5,11 +5,11 @@ from openmm.app import Simulation, Topology
 import openmm.unit as unit
 from typing import Optional, Tuple, List, Dict, Union, Any
 from numpy.typing import NDArray
-from Platforms import PlatformManager
-from Integrators import IntegratorManager
-from Forcefield import ForceFieldManager
-from Utilities import config_generator, LogManager
-from Reporters import SaveStructure, StabilityReporter, EnergyReporter
+from .Platforms import PlatformManager
+from .Integrators import IntegratorManager
+from .Forcefield import ForceFieldManager
+from .Utilities import config_generator, LogManager
+from .Reporters import SaveStructure, StabilityReporter, EnergyReporter
 
 class ChromatinDynamics:
     """

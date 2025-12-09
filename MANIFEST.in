@@ -1,4 +1,2 @@
 include README.md
 include LICENSE
-recursive-include chromdyn *.py
-recursive-include chromdyn *.txt *.csv *.json *.yaml *.yml

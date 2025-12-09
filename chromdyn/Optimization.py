@@ -1,5 +1,5 @@
 import numpy as np
-from HiCManager import HiCManager
+from .HiCManager import HiCManager
 hicman = HiCManager()
 import h5py
 from pathlib import Path
