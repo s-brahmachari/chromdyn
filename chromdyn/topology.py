@@ -3,13 +3,16 @@ from pathlib import Path
 import numpy as np
 from typing import List, Optional, Union
 
+
 class TopologyGenerator:
     def __init__(self) -> None:
         """
         Initialize a new TopologyGenerator with an empty OpenMM Topology object.
         """
         self.topology: Topology = Topology()  # OpenMM Topology container
-        self.atom_types: Optional[List[str]] = None  # Will hold atom type names after topology generation
+        self.atom_types: Optional[List[str]] = (
+            None  # Will hold atom type names after topology generation
+        )
 
     def gen_top(
         self,
@@ -17,7 +20,7 @@ class TopologyGenerator:
         types: Union[str, List[str]] = "A",
         chain_names: Optional[List[str]] = None,
         isRing: Optional[List[int]] = None,
-        **kwargs
+        **kwargs,
     ) -> None:
         """
         Generate a molecular topology with chains, residues, atoms, and bonds.
@@ -31,27 +34,27 @@ class TopologyGenerator:
             - atoms_per_residue (int): Number of atoms per residue. Default is 1.
         """
         # Number of atoms in each residue
-        atoms_per_residue: int = int(kwargs.get('atoms_per_residue', 1))
-        
+        atoms_per_residue: int = int(kwargs.get("atoms_per_residue", 1))
+
         # Default chain names if not provided
         if chain_names is None:
-            chain_names = [f'C{xx}' for xx in range(1, len(chain_lens)+1)]
-        
+            chain_names = [f"C{xx}" for xx in range(1, len(chain_lens) + 1)]
+
         # Default isRing flag as 0 (non-cyclic) if not provided
         if isRing is None:
             isRing = [0] * len(chain_lens)
-        
+
         atom_types: List[str] = []
-        
+
         # Determine atom types from input
         if isinstance(types, str):
             type_file = Path(types)
             if type_file.exists():
                 # Load from file if it exists
                 atom_types = np.loadtxt(type_file, usecols=[1], dtype=str).tolist()
-            elif types == 'unique':
+            elif types == "unique":
                 # Assign unique types for each atom
-                atom_types = [f"M{xx}" for xx in range(1, sum(chain_lens)+1)]
+                atom_types = [f"M{xx}" for xx in range(1, sum(chain_lens) + 1)]
             elif len(types) < 4:
                 # Use single type for all atoms
                 atom_types = [types] * sum(chain_lens)
@@ -59,8 +62,12 @@ class TopologyGenerator:
             atom_types = types
 
         # Validation checks
-        assert len(chain_names) == len(chain_lens), 'chain_names do not match chain_lens'
-        assert len(atom_types) == sum(chain_lens), 'types file does not match chain_lens'
+        assert len(chain_names) == len(
+            chain_lens
+        ), "chain_names do not match chain_lens"
+        assert len(atom_types) == sum(
+            chain_lens
+        ), "types file does not match chain_lens"
 
         kk: int = 0  # Atom counter across all chains
 
@@ -78,10 +85,12 @@ class TopologyGenerator:
                         f"{chain_names[cid]}-L{resid}-{aid+1}",
                         f"{atom_types[kk]}",
                         residue,
-                        f"{kk}"
+                        f"{kk}",
                     )
                     if previous_atom is not None:
-                        self.topology.addBond(previous_atom, atom)  # Bond with previous atom
+                        self.topology.addBond(
+                            previous_atom, atom
+                        )  # Bond with previous atom
                     kk += 1
                     previous_atom = atom
 
@@ -92,7 +101,7 @@ class TopologyGenerator:
                     f"{chain_names[cid]}-L{resid}-{ii+1}",
                     f"{atom_types[kk]}",
                     residue,
-                    f"{kk}"
+                    f"{kk}",
                 )
                 self.topology.addBond(previous_atom, atom)
                 previous_atom = atom
@@ -125,7 +134,7 @@ class TopologyGenerator:
                         f"{residue.name:<10} {chain.id:<10}\n"
                     )
 
-    def save_top(self, filename: str = 'topology.txt') -> None:
+    def save_top(self, filename: str = "topology.txt") -> None:
         """
         Save the generated topology to a file with formatted fields:
         Atom ID, Name, Type, Residue (Loci), and Chain ID.
@@ -136,7 +145,9 @@ class TopologyGenerator:
         atom_count: int = sum(1 for _ in self.topology.atoms())
         with open(filename, "w") as f:
             f.write(f"{atom_count}\n")
-            f.write(f"{'ID':<10} {'Name':<20} {'Type':<10} {'Loci':<10} {'Chain':<10}\n")
+            f.write(
+                f"{'ID':<10} {'Name':<20} {'Type':<10} {'Loci':<10} {'Chain':<10}\n"
+            )
             for chain in self.topology.chains():
                 for residue in chain.residues():
                     for atom in residue.atoms():

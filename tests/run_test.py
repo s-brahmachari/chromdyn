@@ -1,10 +1,11 @@
-import sys
-sys.path.append('../chromdyn')
-from Topology import TopologyGenerator
-from ChromatinDynamics import ChromatinDynamics
-from Utilities import LogManager
-from Platforms import PlatformManager
-from Analyzers import load_traj, compute_RG
+from chromdyn import (
+    ChromatinDynamics, 
+    TopologyGenerator,
+    LogManager,
+    PlatformManager,
+    Analyzer,
+    TrajectoryLoader
+)
 import numpy as np
 import argparse as arg
 
@@ -59,7 +60,7 @@ class run_tests:
             #Simulations done -- save reports
             sim.save_reports()
             
-            xyz = load_traj(sim.reporters.get('position').filename)
+            xyz = TrajectoryLoader.load(sim.reporters.get('position').filename)
             bond_lengths = np.linalg.norm(xyz[:,1:,:]-xyz[:,:-1,:], axis=2).flatten()
             sigma_b = np.std(bond_lengths)
             out_str+=f"{sigma_b:^10.3f}"
@@ -106,8 +107,8 @@ class run_tests:
             #Simulations done -- save reports
             sim.save_reports()
             
-            xyz = load_traj(sim.reporters.get('position').filename)
-            rg = np.mean(compute_RG(xyz))
+            xyz = TrajectoryLoader.load(sim.reporters.get('position').filename)
+            rg = np.mean(Analyzer.compute_RG(xyz))
             out_str+=f"{rg:^10.2f}"
             self.logger.info(out_str)
         self.logger.info("-" * 80)
@@ -153,8 +154,8 @@ class run_tests:
             #Simulations done -- save reports
             sim.save_reports()
             
-            xyz = load_traj(sim.reporters.get('position').filename)
-            rg = np.mean(compute_RG(xyz))
+            xyz = TrajectoryLoader.load(sim.reporters.get('position').filename)
+            rg = np.mean(Analyzer.compute_RG(xyz))
             out_str+=f"{rg:^10.2f}"
             self.logger.info(out_str)
         self.logger.info("-" * 80)
@@ -208,8 +209,8 @@ class run_tests:
             #Simulations done -- save reports
             sim.save_reports()
             
-            xyz = load_traj(sim.reporters.get('position').filename)
-            rg = np.mean(compute_RG(xyz))
+            xyz = TrajectoryLoader.load(sim.reporters.get('position').filename)
+            rg = np.mean(Analyzer.compute_RG(xyz))
             out_str+=f"{rg:^10.2f}"
             self.logger.info(out_str)
         self.logger.info("-" * 80)
@@ -257,27 +258,33 @@ class run_tests:
             #Simulations done -- save reports
             sim.save_reports()
             
-            xyz = load_traj(sim.reporters.get('position').filename)
-            rg = np.mean(compute_RG(xyz))
+            xyz = TrajectoryLoader.load(sim.reporters.get('position').filename)
+            rg = np.mean(Analyzer.compute_RG(xyz))
             out_str+=f"{rg:^10.2f}"
             self.logger.info(out_str)
         self.logger.info("-" * 80)
 
-if __name__=="__main__":
-    parser=arg.ArgumentParser()
-    parser.add_argument('--all', action="store_true", help="run all tests")
-    parser.add_argument('-p', default="CPU", dest='platform', help=" provide platform name to run tests")
-    args=parser.parse_args()
+def test_minimal_simulation_runs(tmp_path):
+
+    generator = TopologyGenerator()
+    generator.gen_top([10])
+    sim = ChromatinDynamics(generator.topology, name=f'test', platform_name="CPU", console_stream=False)
+    sim.force_field_manager.add_harmonic_bonds(r0=1.0, k=30.0)
+            
+    #set up the simulation
+    sim.simulation_setup(
+        init_struct='randomwalk',
+        integrator='langevin',
+        temperature=120.0,
+        output_dir=tmp_path,
+        timestep=0.01,
+        save_pos=False,
+        save_energy=False,
+        )
+    #collapse run
+    sim.run(10, report=False)
     
-    test = run_tests()
-    all_platforms = test.platforms()
-    
-    assert args.platform in all_platforms, f"Requested platform {args.platform} does not exist."
-    
-    if args.all is True:
-        test.harmonic_bonds(platform=args.platform)
-        test.confinement(platform=args.platform)
-        test.self_avoidance(platform=args.platform)
-        test.bad_solvent(platform=args.platform)
-        test.remove_force(platform=args.platform)
-    
+    positions = sim.get_positions()
+
+    assert positions.shape == (10, 3)
+    assert np.all(np.isfinite(positions))

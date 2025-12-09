@@ -3,20 +3,35 @@ chromdyn: Tools for chromosome dynamics modeling and analysis.
 """
 
 # Expose the main simulation interface
-from .ChromatinDynamics import ChromatinDynamics
+from .chromatin_dynamics import ChromatinDynamics
 
 # Optionally expose key components at the package level
-from .Platforms import PlatformManager
-from .Integrators import IntegratorManager
-from .Forcefield import ForceFieldManager
-from .Topology import TopologyGenerator
+from .platforms import PlatformManager
+from .integrators import IntegratorManager
+from .forcefield import ForceFieldManager
+from .topology import TopologyGenerator
+from .traj_utils import TrajectoryLoader, Analyzer
 
 # Utility functions and logging
-from .Utilities import config_generator, LogManager
+from .utilities import config_generator, LogManager
 
 # Reporters
-from .Reporters import SaveStructure, StabilityReporter, EnergyReporter
+from .reporters import SaveStructure, StabilityReporter, EnergyReporter
 
+__all__ = [
+    "ChromatinDynamics",
+    "PlatformManager",
+    "IntegratorManager",
+    "ForceFieldManager",
+    "config_generator",
+    "LogManager",
+    "SaveStructure",
+    "StabilityReporter",
+    "EnergyReporter",
+    "TopologyGenerator",
+    "TrajectoryLoader",
+    "Analyzer",
+]
 # Version
 try:
     from ._version import version as __version__
