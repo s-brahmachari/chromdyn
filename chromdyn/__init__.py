@@ -9,6 +9,7 @@ from .ChromatinDynamics import ChromatinDynamics
 from .Platforms import PlatformManager
 from .Integrators import IntegratorManager
 from .Forcefield import ForceFieldManager
+from .Topology import TopologyGenerator
 
 # Utility functions and logging
 from .Utilities import config_generator, LogManager
