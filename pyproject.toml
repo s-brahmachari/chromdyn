@@ -19,7 +19,6 @@ authors = [{ name = "Sumitabha Brahmachari", email = "b.sumitabha@gmail.com" }]
 keywords = ["chromosome", "dynamics", "biophysics", "polymer"]
 classifiers = [
   "Programming Language :: Python :: 3",
-  "License :: OSI Approved :: MIT License",
   "Operating System :: OS Independent",
 ]
 # Put runtime dependencies here (example commented out):
