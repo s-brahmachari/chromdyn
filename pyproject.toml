@@ -7,7 +7,7 @@ name = "chromdyn"                              # change if taken on PyPI
 description = "Tools for chromosome dynamics modeling and analysis"
 readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.9"
-license = { text = "MIT" }
+license = "MIT"
 dependencies = [
   "numpy==1.26",
   "scipy>=1.11",
