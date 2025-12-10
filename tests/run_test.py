@@ -6,9 +6,8 @@ from chromdyn import (
     Analyzer,
     TrajectoryLoader
 )
+import openmm.unit as unit
 import numpy as np
-import argparse as arg
-
 
 class run_tests:
     def __init__(self):
@@ -268,7 +267,7 @@ def test_minimal_simulation_runs(tmp_path):
 
     generator = TopologyGenerator()
     generator.gen_top([10])
-    sim = ChromatinDynamics(generator.topology, name=f'test', platform_name="CPU", console_stream=False)
+    sim = ChromatinDynamics(generator.topology, name=f'test', output_dir=tmp_path, platform_name="CPU", console_stream=False)
     sim.force_field_manager.add_harmonic_bonds(r0=1.0, k=30.0)
             
     #set up the simulation
@@ -276,15 +275,18 @@ def test_minimal_simulation_runs(tmp_path):
         init_struct='randomwalk',
         integrator='langevin',
         temperature=120.0,
-        output_dir=tmp_path,
         timestep=0.01,
         save_pos=False,
         save_energy=False,
         )
     #collapse run
     sim.run(10, report=False)
+    context = sim.simulation.context
+    state = context.getState(getPositions=True)
     
-    positions = sim.get_positions()
+    positions = state.getPositions(asNumpy=True).value_in_unit(
+                unit.nanometer
+            )
 
     assert positions.shape == (10, 3)
     assert np.all(np.isfinite(positions))

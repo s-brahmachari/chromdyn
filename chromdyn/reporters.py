@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Union, Optional, Tuple
 from .traj_utils import Analyzer
 
+
 class SaveStructure:
     def __init__(self, reportFile: Union[str, Path], reportInterval: int = 1000):
         self.filename: str = str(reportFile)

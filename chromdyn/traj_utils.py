@@ -6,6 +6,7 @@ from pathlib import Path
 import numpy as np
 import h5py
 
+
 class Analyzer:
     """
     Analyzer for geometric/topological properties of curves:
@@ -147,6 +148,7 @@ class TrajectoryLoader:
     """
     Loader for HDF5 trajectories .
     """
+
     @staticmethod
     def load(traj_file: Union[str, Path], d: int = 1) -> np.ndarray:
         """
