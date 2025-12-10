@@ -26,14 +26,20 @@ class ChromatinDynamics:
         output_dir: str = "output",
         console_stream: bool = True,
         mass: float = 1.0,
+        write_logs: bool = True,
     ) -> None:
 
         self.name = name
-        self.output_dir = Path(output_dir)
-        self.output_dir.mkdir(parents=True, exist_ok=True)
-        self.logger = LogManager(log_file=self.output_dir / f"{name}.log").get_logger(
-            __name__, console=console_stream
-        )
+        if write_logs:
+            self.output_dir = Path(output_dir)
+            self.output_dir.mkdir(parents=True, exist_ok=True)
+            
+            self.logger = LogManager(log_file=self.output_dir / f"{name}.log").get_logger(
+                __name__, console=console_stream
+            )
+        else:
+            self.output_dir = None
+            self.logger = LogManager().get_logger(__name__, console=console_stream)
 
         self.logger.info("*" * 60)
         self.logger.info(f"{'Chromatin Dynamics':^60}")
@@ -71,6 +77,7 @@ class ChromatinDynamics:
         friction: float = 0.1,
         save_pos: bool = True,
         save_energy: bool = True,
+        stability_check: bool = True,
         stability_report_interval: int = 500,
         energy_report_interval: int = 1000,
         pos_report_interval: int = 1000,
@@ -129,17 +136,17 @@ class ChromatinDynamics:
             )
             self.simulation.reporters.append(self.reporters["energy"])
             self.logger.info(f"Energy reporter created: {path}")
-
-        path = self.output_dir / f"{self.name}_stability_report.txt"
-        self.reporters["stability"] = StabilityReporter(
-            path,
-            reportInterval=stability_report_interval,
-            logger=self.logger,
-            kinetic_threshold=5.0,
-            potential_threshold=5.0,
-        )
-        self.simulation.reporters.append(self.reporters["stability"])
-        self.logger.info(f"Stability reporter created: {path}")
+        if stability_check:
+            path = self.output_dir / f"{self.name}_stability_report.txt"
+            self.reporters["stability"] = StabilityReporter(
+                path,
+                reportInterval=stability_report_interval,
+                logger=self.logger,
+                kinetic_threshold=5.0,
+                potential_threshold=5.0,
+            )
+            self.simulation.reporters.append(self.reporters["stability"])
+            self.logger.info(f"Stability reporter created: {path}")
 
     def set_activity(self, F_seq: List, tau_seq: List):
 
