@@ -24,4 +24,4 @@ jobs:
         with:
           skip-existing: true
           # For TestPyPI first, uncomment:
-          # repository-url: https://test.pypi.org/legacy/
+          repository-url: https://test.pypi.org/legacy/

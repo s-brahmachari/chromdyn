@@ -47,3 +47,19 @@ exclude = ["tests*", "docs*", "notebooks*"]
 version_scheme = "post-release"
 local_scheme = "no-local-version"
 write_to = "chromdyn/_version.py"
+
+[tool.ruff]
+exclude = ["chromdyn/data", "chromdyn/scripts", "notebooks"]
+
+[tool.black]
+line-length = 88
+
+exclude = '''
+(
+    /chromdyn/data/
+  | /chromdyn/scripts/
+  | /notebooks/
+  | /build/
+  | /dist/
+)
+'''
