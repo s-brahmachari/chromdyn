@@ -54,8 +54,7 @@ class ChromatinDynamics:
     def simulation_setup(self,
                          init_struct: Union[str, NDArray] = 'randomwalk',
                          PBC: bool = False,
-                         box_vectors: Optional[Tuple[Tuple[float,float,float], Tuple[float,float,float], Tuple[float,float,float]]] = None,
-                          
+                         box_vectors: Optional[Tuple[Tuple[float,float,float], Tuple[float,float,float], Tuple[float,float,float]]] = None,                          
                          integrator: str = 'langevin',
                          temperature: float = 120.0,
                          timestep: float = 0.01,

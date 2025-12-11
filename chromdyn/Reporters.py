@@ -269,6 +269,7 @@ class EnergyReporter:
             self.saveFile.write("\n")
             self.saveFile.flush()
 
+# new version: in traj_utils.py
 def save_pdb(chrom_dyn_obj, **kwargs):
     filename = kwargs.get(
         'filename',
@@ -292,12 +293,12 @@ def save_pdb(chrom_dyn_obj, **kwargs):
     with open(filename, 'w') as pdb_file:
         pdb_file.write(f"TITLE     {chrom_dyn_obj.name}\n")
         if PBC:
-            # 获取盒子向量 (假设是正交盒子，只取 x, y, z 长度)
+            # get box vectors
             box = chrom_dyn_obj.simulation.context.getState().getPeriodicBoxVectors()
             a = box[0].x * 10.0 # nm to Angstrom for PDB
             b = box[1].y * 10.0
             c = box[2].z * 10.0
-            # PDB CRYST1 格式: lenA lenB lenC alpha beta gamma SpaceGroup
+            # PDB CRYST1 format: lenA lenB lenC alpha beta gamma SpaceGroup
             pdb_file.write(f"CRYST1{a:9.3f}{b:9.3f}{c:9.3f}  90.00  90.00  90.00 P 1           1\n")
 
         pdb_file.write(f"MODEL     {chrom_dyn_obj.simulation.currentStep}\n")

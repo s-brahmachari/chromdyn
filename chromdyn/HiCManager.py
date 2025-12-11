@@ -390,7 +390,7 @@ class HiCManager:
         if platform.upper() == 'CUDA':
             if CUPY_AVAILABLE and cp.cuda.runtime.getDeviceCount() > 0:
                 self.logger.info("Computing PBC HiC on GPU...")
-                hic = _calc_HiC_from_traj_array_gpu(xyz, boxes, mu, rc, p, batch_size=batch_size)
+                hic = _calc_HiC_from_traj_array_gpu(xyz, mu, rc, p, boxes, batch_size=batch_size)
             else:
                 self.logger.warning("CUDA not available. Falling back to CPU.")
                 platform = 'CPU'
@@ -431,44 +431,44 @@ class HiCManager:
         self.logger.info(f"Generated PBC HiC matrix of shape: {hic.shape}")
         return hic
         
-    def _calc_prob(data, mu, rc, p=None):
-        """
-        Calculates a Hi-C like contact probability matrix from 3D coordinate data.
+def _calc_prob(data, mu, rc, p=None):
+    """
+    Calculates a Hi-C like contact probability matrix from 3D coordinate data.
 
-        This modified version supports two modes:
-        1. If 'p' is provided, it uses a hybrid model: a sigmoid function for distances
-        less than or equal to rc, and a power-law decay for distances greater than rc.
-        2. If 'p' is None, it uses only the sigmoid function for all distances.
+    This modified version supports two modes:
+    1. If 'p' is provided, it uses a hybrid model: a sigmoid function for distances
+    less than or equal to rc, and a power-law decay for distances greater than rc.
+    2. If 'p' is None, it uses only the sigmoid function for all distances.
 
-        Args:
-            data (np.ndarray): The input coordinate data, shape (N, 3).
-            mu (float): Steepness parameter for the sigmoid function.
-            rc (float): Cutoff distance for the sigmoid function.
-            p (float, optional): The exponent for the power-law decay. If None,
-                                only the sigmoid function is used. Defaults to None.
+    Args:
+        data (np.ndarray): The input coordinate data, shape (N, 3).
+        mu (float): Steepness parameter for the sigmoid function.
+        rc (float): Cutoff distance for the sigmoid function.
+        p (float, optional): The exponent for the power-law decay. If None,
+                            only the sigmoid function is used. Defaults to None.
 
-        Returns:
-            np.ndarray: An N x N symmetric matrix of contact probabilities.
-        """
-        # Compute condensed distance matrix (upper triangle of the distance matrix)
-        r = pdist(data, metric='euclidean')
-        
-        # Check if the power-law exponent 'p' is provided
-        if p is not None:
-            # If p is provided, use the original conditional logic
-            # applying sigmoid for r <= rc and power-law for r > rc.
-            f_condensed = np.where(
-                r <= rc,
-                0.5 * (1 + np.tanh(mu * (rc - r))),
-                0.5 * (rc / r) ** p
-            )
-        else:
-            # If p is None, apply only the sigmoid-like function to all distances.
-            f_condensed = 0.5 * (1 + np.tanh(mu * (rc - r)))
+    Returns:
+        np.ndarray: An N x N symmetric matrix of contact probabilities.
+    """
+    # Compute condensed distance matrix (upper triangle of the distance matrix)
+    r = pdist(data, metric='euclidean')
+    
+    # Check if the power-law exponent 'p' is provided
+    if p is not None:
+        # If p is provided, use the original conditional logic
+        # applying sigmoid for r <= rc and power-law for r > rc.
+        f_condensed = np.where(
+            r <= rc,
+            0.5 * (1 + np.tanh(mu * (rc - r))),
+            0.5 * (rc / r) ** p
+        )
+    else:
+        # If p is None, apply only the sigmoid-like function to all distances.
+        f_condensed = 0.5 * (1 + np.tanh(mu * (rc - r)))
 
-        # Convert the condensed (1D) array back to a square symmetric matrix
-        f = squareform(f_condensed)
-        return f
+    # Convert the condensed (1D) array back to a square symmetric matrix
+    f = squareform(f_condensed)
+    return f
 
 def _calc_HiC_from_traj_array_gpu(traj, mu, rc, p=None, boxes=None, batch_size=None):
     """

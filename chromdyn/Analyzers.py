@@ -2,6 +2,7 @@ import numpy as np
 import h5py
 from multiprocessing import Pool, cpu_count
 
+# new version: in traj_utils.py
 def _segment_solid_angle(p1, p2, q1, q2):
     r13, r14 = q1 - p1, q2 - p1
     r23, r24 = q1 - p2, q2 - p2
