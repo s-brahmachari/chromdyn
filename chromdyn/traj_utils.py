@@ -202,6 +202,8 @@ def save_pdb(chrom_dyn_obj, **kwargs):
         ),
     )
 
+    PBC = kwargs.get('PBC', False)
+
     # Unique residue names for different chains
     residue_names_by_chain = [
         "GLY",
@@ -227,12 +229,21 @@ def save_pdb(chrom_dyn_obj, **kwargs):
     ]
 
     # Get atomic positions
-    state = chrom_dyn_obj.simulation.context.getState(getPositions=True)
+    state = chrom_dyn_obj.simulation.context.getState(getPositions=True, enforcePeriodicBox=PBC)
     positions = state.getPositions(asNumpy=True).value_in_unit(unit.nanometer)
     topology = chrom_dyn_obj.topology  # OpenMM Topology
 
     with open(filename, "w") as pdb_file:
         pdb_file.write(f"TITLE     {chrom_dyn_obj.name}\n")
+        if PBC:
+            # get box vectors
+            box = chrom_dyn_obj.simulation.context.getState().getPeriodicBoxVectors()
+            a = box[0].x * 10.0 # nm to Angstrom for PDB
+            b = box[1].y * 10.0
+            c = box[2].z * 10.0
+            # PDB CRYST1 format: lenA lenB lenC alpha beta gamma SpaceGroup
+            pdb_file.write(f"CRYST1{a:9.3f}{b:9.3f}{c:9.3f}  90.00  90.00  90.00 P 1           1\n")
+
         pdb_file.write(f"MODEL     {chrom_dyn_obj.simulation.currentStep}\n")
 
         atom_index = 0

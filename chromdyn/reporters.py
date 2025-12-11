@@ -7,8 +7,9 @@
 #  * --------------------------------------------------------------------------- *
 import numpy as np
 import h5py
+import json
 from openmm.app import Simulation
-from openmm import System, State
+from openmm import System, State, app
 import openmm.unit as unit
 from openmm import CMMotionRemover
 import os
@@ -19,9 +20,11 @@ from .traj_utils import Analyzer
 
 
 class SaveStructure:
-    def __init__(self, report_file: Union[str, Path], reportInterval: int = 1000):
+    def __init__(self, report_file: Union[str, Path], PBC: bool ,topology: app.Topology, reportInterval: int = 1000):
         self.filename: str = str(report_file)
         self.reportInterval: int = reportInterval
+        self.topology = topology
+        self.PBC = PBC
         mode: str = self.filename.split(".")[-1].lower()
         if mode not in ["cndb"]:
             raise ValueError(
@@ -39,6 +42,78 @@ class SaveStructure:
                 os.rename(self.filename, backup_name)
 
             self.saveFile: h5py.File = h5py.File(self.filename, "w")
+        
+        # Initialize static datasets
+        self._save_types()
+        self._save_full_topology()
+
+    def _save_types(self):
+        """Extracts atom types (from element) and saves as a dataset."""
+        type_list = []
+        for atom in self.topology.atoms():
+            # Use element symbol as type if it's an Element object, else use string directly
+            t_str = atom.element if isinstance(atom.element, str) else atom.element.symbol
+            type_list.append(t_str)
+        
+        # Save as variable-length string dataset
+        dt = h5py.special_dtype(vlen=str) 
+        self.saveFile.create_dataset('types', data=np.array(type_list, dtype=dt))
+
+    def _save_full_topology(self):
+        """
+        Serializes the OpenMM Topology into a JSON string and saves it.
+        Structure:
+        {
+            "chains": [
+                {"index": 0, "id": "C1", "residues": [...]}
+            ],
+            "bonds": [[atom_idx1, atom_idx2], ...]
+        }
+        """
+        topology_data = {
+            "chains": [],
+            "bonds": []
+        }
+
+        # Helper to map Atom Object -> Global Index
+        atom_to_index = {atom: i for i, atom in enumerate(self.topology.atoms())}
+
+        # 1. Serialize Hierarchy (Chain -> Residue -> Atom)
+        for chain in self.topology.chains():
+            chain_dict = {
+                "index": chain.index,
+                "id": chain.id,
+                "residues": []
+            }
+            for res in chain.residues():
+                res_dict = {
+                    "index": res.index,
+                    "name": res.name,
+                    "id": res.id,
+                    "atoms": []
+                }
+                for atom in res.atoms():
+                    atom_dict = {
+                        "index": atom.index,
+                        "name": atom.name,
+                        "type": atom.element if isinstance(atom.element, str) else atom.element.symbol
+                    }
+                    res_dict["atoms"].append(atom_dict)
+                chain_dict["residues"].append(res_dict)
+            topology_data["chains"].append(chain_dict)
+
+        # 2. Serialize Bonds
+        # Store as list of [index_A, index_B]
+        for bond in self.topology.bonds():
+            a1_idx = atom_to_index[bond.atom1]
+            a2_idx = atom_to_index[bond.atom2]
+            topology_data["bonds"].append([a1_idx, a2_idx])
+
+        # 3. Save to HDF5 as JSON string
+        json_str = json.dumps(topology_data)
+        dt = h5py.special_dtype(vlen=str)
+        dset = self.saveFile.create_dataset('topology_json', shape=(1,), dtype=dt)
+        dset[0] = json_str
 
     def close(self) -> None:
         self.saveFile.close()
@@ -65,15 +140,18 @@ class SaveStructure:
     def report(self, simulation: Simulation, state: State) -> None:
         """Generate a report."""
         if not self.is_paused:
-            data: np.ndarray = state.getPositions(asNumpy=True).value_in_unit(
-                unit.nanometer
-            )
-            if self.mode == "cndb":
+            data: np.ndarray = state.getPositions(asNumpy=True).value_in_unit(unit.nanometer)
+            if self.mode == 'cndb':
                 self.saveFile[str(self.savestep)] = np.array(data)
+
+                if self.PBC:
+                    box = state.getPeriodicBoxVectors(asNumpy=True).value_in_unit(unit.nanometer)
+                    self.saveFile[str(self.savestep)].attrs['box'] = box
+                
             else:
                 raise ValueError(f"Unsupported mode: {self.mode}")
+            self.saveFile.flush()
             self.savestep += 1
-
 
 class StabilityReporter:
     def __init__(
@@ -264,3 +342,4 @@ class EnergyReporter:
 
             self.saveFile.write("\n")
             self.saveFile.flush()
+
