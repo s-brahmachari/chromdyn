@@ -1,3 +1,11 @@
+#  * --------------------------------------------------------------------------- *
+#  *                                  chromdyn                                   *
+#  * --------------------------------------------------------------------------- *
+#  * This is part of the chromdyn simulation toolkit released under MIT License. *
+#  *                                                                             *
+#  * Author: Sumitabha Brahmachari                                               *
+#  * --------------------------------------------------------------------------- *
+
 from openmm import (
     System,
     Discrete2DFunction,
@@ -642,92 +650,3 @@ class ForceFieldManager:
             self._initialize_force_z_axis(group)
 
         self.forceDict["zAxialPull"].addParticle(int(mono_id), [float(fz), float(k_xy)])
-
-    # def add_default_forces(self, mode='default', **kwargs):
-    #     type_table = str(kwargs.get('type_table', None))
-    #     k_res = float(kwargs.get('k_res', 1.0))            # Default bond spring constant
-    #     r_rep = float(kwargs.get('r_rep', 1.0))
-    #     chi = float(kwargs.get('chi', 0.0))
-    #     cmm_remove = kwargs.get('cmm_remove', None)
-    #     k_bond = float(kwargs.get('k_bond', 30.0))
-    #     r_bond = float(kwargs.get('r_bond', 1.0))
-    #     k_angle = float(kwargs.get('k_angle', 2.0))
-    #     k_rep = float(kwargs.get('k_rep', 5.0))
-    #     E_rep = float(kwargs.get('E_rep', 4.0))
-    #     theta0 = float(kwargs.get('theta0', 180.0))
-    #     rc = float(kwargs.get('rc', 1.5))
-
-    #     """Configures system with appropriate force fields based on mode."""
-    #     # self.logger.info("-"*60)
-    #     self.logger.info(f"Setting up forces with mode='{mode}'")
-
-    #     if cmm_remove: self.removeCOM(self.system)
-
-    #     if mode == 'default':
-    #         self.add_harmonic_bonds(k=k_bond, r0=r_bond)
-    #         type_labels, interaction_matrix = self._get_type_interaction_matrix('./type_interaction_table.csv')
-    #         self.add_type_to_type_interaction(interaction_matrix, type_labels)
-
-    #     elif mode == 'debug':
-    #         self.add_harmonic_trap(kr=k_res)
-    #         self.add_harmonic_bonds(k=k_bond, r0=r_bond)
-    #         self.add_self_avoidance(Ecut=E_rep, k=k_rep, r=r_rep)
-    #         type_labels, interaction_matrix = self._get_type_interaction_matrix('./type_interaction_table.csv')
-    #         self.add_type_to_type_interaction(interaction_matrix, type_labels)
-
-    #     elif mode == 'harmtrap_gauss':
-    #         self.add_harmonic_bonds(k=k_bond, r0=r_bond)
-    #         self.add_harmonic_trap(kr=k_res)
-
-    #     elif mode == "harmtrap_saw":
-    #         self.add_harmonic_bonds(k=k_bond, r0=r_bond)
-    #         self.add_harmonic_trap(kr=k_res)
-    #         self.add_self_avoidance(Ecut=E_rep, k=k_rep, r=r_rep)
-
-    #     elif mode == "saw":
-    #         self.add_harmonic_bonds(k=k_bond, r0=r_bond)
-    #         self.add_self_avoidance(Ecut=E_rep, k=k_rep, r=r_rep)
-
-    #     elif mode == "saw_LJ":
-    #         self.add_harmonic_bonds(k=k_bond, r0=r_bond)
-    #         self.add_LJ_repulsion(sigma=r_rep)
-
-    #     elif mode == "saw_LJ_fene":
-    #         self.add_fene_bonds(k=k_bond)
-    #         self.add_LJ_repulsion(sigma=r_rep)
-
-    #     elif mode=="saw_stiff_backbone":
-    #         self.add_harmonic_bonds(k=k_bond, r0=r_bond)
-    #         self.add_self_avoidance(Ecut=E_rep, k=k_rep, r=r_rep)
-    #         self.add_harmonic_angles(theta0=theta0, k_angle=k_angle)
-
-    #     elif mode=="saw_stiff_backbone_bad_solvent":
-    #         self.add_harmonic_bonds(k=k_bond, r0=r_bond)
-    #         self.add_self_avoidance(Ecut=E_rep, k=k_rep, r=r_rep)
-    #         self.add_harmonic_angles(theta0=theta0, k_angle=k_angle)
-    #         type_labels = ["A", "B"]
-    #         interaction_matrix = [[chi, 0.0], [0.0, 0.0]]
-    #         self.add_type_to_type_interaction(interaction_matrix, type_labels, rc=rc)
-
-    #     elif mode == "gauss":
-    #         self.add_harmonic_bonds(k=k_bond, r0=r_bond)
-
-    #     elif mode == "fene":
-    #         self.add_fene_bonds(k=k_bond)
-
-    #     elif mode == "saw_bad_solvent":
-    #         self.add_harmonic_bonds(k=k_bond, r0=r_bond)
-    #         self.add_self_avoidance(Ecut=E_rep, k=k_rep, r=r_rep)
-    #         type_labels = ["A", "B"]
-    #         interaction_matrix = [[chi, 0.0], [0.0, 0.0]]
-    #         self.add_type_to_type_interaction(interaction_matrix, type_labels, rc=rc)
-
-    #     elif mode == "saw_LJ_bad_solvent":
-    #         self.add_harmonic_bonds(k=k_bond, r0=r_bond)
-    #         self.add_LJ_repulsion(sigma=r_rep)
-    #         type_labels = ["A", "B"]
-    #         interaction_matrix = [[chi, 0.0], [0.0, 0.0]]
-    #         self.add_type_to_type_interaction(interaction_matrix, type_labels, rc=rc)
-
-    #     self.logger.info("Force set up complete!")
-    #     self.logger.info("-"*60)

@@ -1,4 +1,10 @@
-# chromdyn/check_install.py
+#  * --------------------------------------------------------------------------- *
+#  *                                  chromdyn                                   *
+#  * --------------------------------------------------------------------------- *
+#  * This is part of the chromdyn simulation toolkit released under MIT License. *
+#  *                                                                             *
+#  * Author: Sumitabha Brahmachari                                               *
+#  * --------------------------------------------------------------------------- *
 
 from __future__ import annotations
 

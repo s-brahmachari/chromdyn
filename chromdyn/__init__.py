@@ -1,3 +1,10 @@
+#  * --------------------------------------------------------------------------- *
+#  *                                  chromdyn                                   *
+#  * --------------------------------------------------------------------------- *
+#  * This is part of the chromdyn simulation toolkit released under MIT License. *
+#  *                                                                             *
+#  * Author: Sumitabha Brahmachari                                               *
+#  * --------------------------------------------------------------------------- *
 """
 chromdyn: Tools for chromosome dynamics modeling and analysis.
 """

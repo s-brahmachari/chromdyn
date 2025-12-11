@@ -1,3 +1,11 @@
+#  * --------------------------------------------------------------------------- *
+#  *                                  chromdyn                                   *
+#  * --------------------------------------------------------------------------- *
+#  * This is part of the chromdyn simulation toolkit released under MIT License. *
+#  *                                                                             *
+#  * Author: Sumitabha Brahmachari                                               *
+#  * --------------------------------------------------------------------------- *
+
 import time
 from pathlib import Path
 from openmm import System, Vec3

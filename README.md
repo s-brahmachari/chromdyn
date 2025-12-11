@@ -1,5 +1,5 @@
 # chromdyn
-*A Python library for chromosome dynamics simulation and analysis using OpenMM and Hi-C–guided models.*
+*A Python library for chromosome dynamics simulation and analysis with options to integrate Hi-C data.*
 
 ## Overview
 

@@ -1,3 +1,10 @@
+#  * --------------------------------------------------------------------------- *
+#  *                                  chromdyn                                   *
+#  * --------------------------------------------------------------------------- *
+#  * This is part of the chromdyn simulation toolkit released under MIT License. *
+#  *                                                                             *
+#  * Author: Sumitabha Brahmachari                                               *
+#  * --------------------------------------------------------------------------- *
 from openmm.app import Topology
 from pathlib import Path
 import numpy as np

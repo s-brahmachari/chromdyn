@@ -1,3 +1,11 @@
+#  * --------------------------------------------------------------------------- *
+#  *                                  chromdyn                                   *
+#  * --------------------------------------------------------------------------- *
+#  * This is part of the chromdyn simulation toolkit released under MIT License. *
+#  *                                                                             *
+#  * Author: Sumitabha Brahmachari                                               *
+#  * --------------------------------------------------------------------------- *
+
 import numpy as np
 import h5py
 from pathlib import Path
@@ -204,24 +212,6 @@ class EnergyLandscapeOptimizer:
 
     def set_opt_method(self, method: str) -> None:
         self.method = method.lower()
-
-    # def compute_force_field(self, ff_current: str) -> pd.DataFrame:
-    #     """Computes and updates the force field from the given file."""
-    #     if self.Pi is None or self.NFrames == 0:
-    #         raise ValueError("Contact probability matrix not initialized. Call compute_contact_prob before force field computation.")
-
-    #     self.phi_sim = self.Pi / self.NFrames
-    #     self.phi_sim[self.mask] = 0.0  # Apply the mask to filter out noise
-
-    #     df = pd.read_csv(ff_current, sep=None, engine='python')
-    #     current_force_field = df.values
-    #     self.force_field = current_force_field
-    #     grad = self.get_error_gradient()
-    #     self.updated_force_field = self.update_step(grad)
-
-    #     df_updated_ff = pd.DataFrame(self.updated_force_field, columns=list(df.columns.values))
-    #     self.error = np.sum(np.abs(np.triu(self.phi_sim, k=2) - np.triu(self.phi_exp, k=2))) / np.sum(np.triu(self.phi_exp, k=2))
-    #     return df_updated_ff
 
     def get_updated_params(
         self, lambda_t: np.ndarray, phi_sim: np.ndarray
