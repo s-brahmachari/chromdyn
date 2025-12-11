@@ -827,7 +827,7 @@ def visualize(traj, select_frame=0, axis_limits=None,
 
     # --- 10. Output & Display ---
     if outputName:
-        plt.savefig(outputName, dpi=150)
+        plt.savefig(outputName, dpi=300)
         print(f"Plot saved to {outputName}")
         plt.close(fig)
     else:
@@ -1068,7 +1068,7 @@ def visualize_animation(traj, start_frame=0, end_frame=None, fps=20,
 
     if outputName:
         writer = FFMpegWriter(fps=fps) if outputName.endswith('.mp4') else PillowWriter(fps=fps)
-        anim.save(outputName, writer=writer, dpi=150)
+        anim.save(outputName, writer=writer, dpi=300)
         print(f"Saved to {outputName}")
         plt.close(fig)
     else:
@@ -1330,7 +1330,7 @@ def visualize_pbc_images(traj, select_frame=0, n_layers=1,
 
     # --- 8. Output ---
     if outputName:
-        plt.savefig(outputName, dpi=150)
+        plt.savefig(outputName, dpi=300)
         print(f"Plot saved to {outputName}")
         plt.close(fig)
     else:

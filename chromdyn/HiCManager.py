@@ -286,7 +286,7 @@ class HiCManager:
         if platform.upper() == 'CUDA':
             if CUPY_AVAILABLE and cp.cuda.runtime.getDeviceCount() > 0:
                 self.logger.info("Computing HiC on CUDA platform...")
-                hic = _calc_HiC_from_traj_array_gpu(xyz, mu, rc, p, batch_size=batch_size)
+                hic = _calc_HiC_from_traj_array_gpu(xyz, mu, rc, p, boxes=None, batch_size=batch_size) # force boxes=None to avoid PBC image included
                 self.logger.info(f"Generated HiC matrix of shape: {hic.shape}")
             else:
                 self.logger.warning("CUDA platform selected, but CuPy/GPU not available. Falling back to CPU.")
@@ -327,7 +327,7 @@ class HiCManager:
         return hic
 
     # =========================================================================
-    # PBC Hi-C Generation (Smooth Probability + Minimum Image Convention)
+    # PBC Hi-C Generation (Fixed: GPU Summation & Precision)
     # =========================================================================
     def gen_pbc_hic_from_cndb(self, traj_file, mu, rc, p=None, platform='CPU', parallel=True, skip_frames=1, batch_size=None):
         """
@@ -359,7 +359,7 @@ class HiCManager:
         
         # 2. Load Data using Standard Class
         traj = ChromatinTrajectory(traj_file)
-        
+
         # Get Coordinates: (N_frames, N_beads, 3)
         # traj.xyz handles the slicing internally via frames=[start, end, step]
         xyz = traj.xyz(frames=[0, None, skip_frames])
@@ -368,11 +368,16 @@ class HiCManager:
         if traj.box_vectors is not None:
             # Slice the box vectors to match the skip_frames of coordinates
             boxes = traj.box_vectors[::skip_frames]
+            # Safety check: if box is all zeros, replace with huge number to disable PBC
+            norms = np.linalg.norm(boxes, axis=(1,2))
+            if np.any(norms < 1e-6):
+                self.logger.warning("Found frames with zero box vectors. Disabling PBC for those frames.")
+                boxes[norms < 1e-6] = np.eye(3) * 999999.9
         else:
-            self.logger.warning("traj.box_vectors is None. Assuming infinite box (Standard Euclidean).")
+            self.logger.warning("traj.box_vectors is None. Assuming infinite box.")
             # Create dummy huge boxes to effectively disable PBC
             boxes = np.tile(np.eye(3) * 999999.9, (xyz.shape[0], 1, 1))
-            
+        
         # Close the trajectory file handle as we have loaded data into memory
         traj.close()
         
@@ -385,7 +390,7 @@ class HiCManager:
         if platform.upper() == 'CUDA':
             if CUPY_AVAILABLE and cp.cuda.runtime.getDeviceCount() > 0:
                 self.logger.info("Computing PBC HiC on GPU...")
-                hic = _calc_pbc_hic_gpu(xyz, boxes, mu, rc, p, batch_size=batch_size)
+                hic = _calc_HiC_from_traj_array_gpu(xyz, boxes, mu, rc, p, batch_size=batch_size)
             else:
                 self.logger.warning("CUDA not available. Falling back to CPU.")
                 platform = 'CPU'
@@ -422,7 +427,7 @@ class HiCManager:
             if not parallel:
                 self.logger.info("Computing PBC HiC serially on CPU...")
                 hic = _calc_pbc_hic_cpu_serial(xyz, boxes, mu, rc, p)
-
+                
         self.logger.info(f"Generated PBC HiC matrix of shape: {hic.shape}")
         return hic
         
@@ -465,60 +470,98 @@ class HiCManager:
         f = squareform(f_condensed)
         return f
 
-# --- NEW GPU-ACCELERATED FUNCTION ---
-def _calc_HiC_from_traj_array_gpu(traj, mu, rc, p=None, batch_size: Optional[int] = None):
+def _calc_HiC_from_traj_array_gpu(traj, mu, rc, p=None, boxes=None, batch_size=None):
     """
-    (Version 2.0: With optional batching for memory efficiency)
-    Fully vectorized Hi-C calculation on the GPU using CuPy.
+    (Version 4.0: Final Universal Kernel)
+    Fully vectorized Hi-C calculation on GPU using CuPy.
+    Handles both PBC (if boxes provided) and Non-PBC (if boxes is None).
+    Uses 'Loop inside Batch' strategy to prevent OOM errors on large systems.
     """
-    traj_cp = cp.array(traj, dtype=cp.float32)
+    # Use float32 for storage/computation to save memory. 
+    # If precision artifacts appear (white stripes), change to cp.float64.
+    dtype_gpu = cp.float32 
+    
+    traj_cp = cp.array(traj, dtype=dtype_gpu)
     n_frames, n_beads, _ = traj_cp.shape
-
+    
+    # --- 1. PBC Setup ---
+    use_pbc = False
+    boxes_diag_cp = None
+    
+    if boxes is not None:
+        # Extract diagonals: (N_frames, 3)
+        boxes_diag = np.array([np.diag(b) for b in boxes])
+        
+        # Check if they are dummy boxes (huge values)
+        if np.min(boxes_diag) < 1e5:
+            use_pbc = True
+            boxes_diag_cp = cp.array(boxes_diag, dtype=dtype_gpu)
+    
     if batch_size is None:
-        # --- METHOD 1: Direct Vectorization (Fastest, High Memory Usage) ---
-        print("  Calculating Hi-C on GPU using direct vectorization...")
-        diffs = traj_cp[:, :, cp.newaxis, :] - traj_cp[:, cp.newaxis, :, :]
-        distances_all_frames = cp.linalg.norm(diffs, axis=-1)
-        
-        if p is not None:
-            prob_matrices = cp.where(distances_all_frames <= rc, 0.5 * (1 + cp.tanh(mu * (rc - distances_all_frames))), 0.5 * (rc / distances_all_frames)**p)
-        else:
-            prob_matrices = 0.5 * (1 + cp.tanh(mu * (rc - distances_all_frames)))
-        
-        prob_matrices[:, cp.arange(n_beads), cp.arange(n_beads)] = 0
-        hic_matrix_cp = cp.mean(prob_matrices, axis=0)
+        batch_size = n_frames
 
-    else:
-        # --- METHOD 2: Batched Processing (Memory-Efficient) ---
-        print(f"  Calculating Hi-C on GPU using batched processing (batch size: {batch_size})...")
-        cumulative_hic_sum = cp.zeros((n_beads, n_beads), dtype=cp.float32)
+    cumulative_prob = cp.zeros((n_beads, n_beads), dtype=dtype_gpu)
+
+    # --- 2. Computation Loop ---
+    for i in range(0, n_frames, batch_size):
+        end = min(i + batch_size, n_frames)
         
-        for i in range(0, n_frames, batch_size):
-            batch_traj = traj_cp[i : i + batch_size]
+        # Slice Batch
+        batch_pos = traj_cp[i:end] # (B, N, 3)
+        
+        if use_pbc:
+            batch_box = boxes_diag_cp[i:end] # (B, 3)
+        
+        # Loop inside batch to keep memory usage O(N^2) instead of O(B * N^2)
+        # This is the safe strategy from your old function.
+        for j in range(batch_pos.shape[0]):
+            pos = batch_pos[j] # (N, 3)
             
-            # Perform vectorized calculation on the smaller batch
-            diffs = batch_traj[:, :, cp.newaxis, :] - batch_traj[:, cp.newaxis, :, :]
-            distances_batch = cp.linalg.norm(diffs, axis=-1)
+            # A. Calculate Difference
+            diff = pos[:, cp.newaxis, :] - pos[cp.newaxis, :, :]
             
+            # B. Apply PBC (MIC) if needed
+            if use_pbc:
+                box = batch_box[j] # (3,)
+                # MIC: diff - box * round(diff/box)
+                diff -= box * cp.round(diff / box)
+            
+            # C. Distance
+            r = cp.linalg.norm(diff, axis=-1)
+            
+            # D. Probability Function
             if p is not None:
-                prob_batch = cp.where(distances_batch <= rc, 0.5 * (1 + cp.tanh(mu * (rc - distances_batch))), 0.5 * (rc / distances_batch)**p)
+                # Add epsilon to prevent div by zero
+                term_power = 0.5 * (rc / (r + 1e-10)) ** p
+                
+                prob = cp.where(
+                    r <= rc,
+                    0.5 * (1 + cp.tanh(mu * (rc - r))),
+                    term_power
+                )
             else:
-                prob_batch = 0.5 * (1 + cp.tanh(mu * (rc - distances_batch)))
-
-            prob_batch[:, cp.arange(n_beads), cp.arange(n_beads)] = 0
-
-            # Add the sum of this batch's results to the cumulative total
-            cumulative_hic_sum += cp.sum(prob_batch, axis=0)
+                prob = 0.5 * (1 + cp.tanh(mu * (rc - r)))
             
-        # Calculate the final average
-        hic_matrix_cp = cumulative_hic_sum / n_frames
+            # Zero out diagonal explicitly (self-contact)
+            # This cleans up any artifacts at r=0
+            prob[cp.arange(n_beads), cp.arange(n_beads)] = 0.0
+            
+            # Accumulate
+            cumulative_prob += prob
 
-    return cp.asnumpy(hic_matrix_cp)
+    # 3. Average
+    hic_matrix = cumulative_prob / n_frames
+    
+    return cp.asnumpy(hic_matrix)
 
 # Function to wrap single-call processing (needed for Pool.map)
 def _wrap_calc(subtraj_mu_rc_p):
     subtraj, mu, rc, p = subtraj_mu_rc_p
     return _calc_HiC_from_traj_array(subtraj, mu, rc, p).astype(np.float32)
+
+def _wrap_calc_pbc(args):
+    sub_xyz, sub_box, mu, rc, p = args
+    return _calc_pbc_hic_cpu_serial(sub_xyz, sub_box, mu, rc, p)
 
 def _calc_HiC_from_traj_array(traj, mu, rc, p):
     # print('Computing probability of contact versus contour distance')
@@ -532,38 +575,35 @@ def _calc_HiC_from_traj_array(traj, mu, rc, p):
 
 
 # =============================================================================
-# Helper Functions for PBC Hi-C (Smooth Probability + MIC)
+# Helper Functions (Fixed Precision and Logic)
 # =============================================================================
 
 def _mic_distance(pos, box):
     """
     Calculates Euclidean distance matrix using Minimum Image Convention.
-    pos: (N, 3)
-    box: (3, 3) - The full box matrix from traj.box_vectors
-    Returns: (N, N) distance matrix
+    Uses float64 for intermediate calculation to avoid precision artifacts.
     """
-    # Extract diagonal (Lx, Ly, Lz) for orthogonal PBC calculation.
-    # OpenMM default periodic boxes are usually diagonal or represented as such here.
-    # Broadcasting requires (3,) or (1, 3)
-    L = np.diag(box) 
-        
+    # Ensure float64
+    pos = pos.astype(np.float64)
+    box = box.astype(np.float64)
+    L = np.diag(box)
+    
     diff = pos[:, np.newaxis, :] - pos[np.newaxis, :, :]
     
-    # MIC correction: diff - L * round(diff / L)
-    # This assumes an orthogonal box.
+    # MIC correction
+    # diff / L can be sensitive if L is small and diff is large
     diff -= L * np.round(diff / L)
     
     return np.linalg.norm(diff, axis=-1)
 
 def _calc_pbc_hic_cpu_serial(traj, boxes, mu, rc, p):
     n_beads = traj.shape[1]
-    total_prob = np.zeros((n_beads, n_beads), dtype=np.float32)
+    total_prob = np.zeros((n_beads, n_beads), dtype=np.float64) # Accumulate in double
     
     for i in range(traj.shape[0]):
         # 1. Calculate Distance with PBC
         r = _mic_distance(traj[i], boxes[i])
         
-        # 2. Apply Probability Function (Sigmoid / Power-law)
         if p is not None:
             # Safe division for power law
             with np.errstate(divide='ignore', invalid='ignore'):
@@ -571,8 +611,8 @@ def _calc_pbc_hic_cpu_serial(traj, boxes, mu, rc, p):
             term_power[r == 0] = 0.0 # Fix diagonal
             
             prob = np.where(
-                r <= rc,
-                0.5 * (1 + np.tanh(mu * (rc - r))),
+                r <= rc, 
+                0.5 * (1 + np.tanh(mu * (rc - r))), 
                 term_power
             )
         else:
@@ -580,13 +620,10 @@ def _calc_pbc_hic_cpu_serial(traj, boxes, mu, rc, p):
             
         total_prob += prob
         
-    return total_prob / traj.shape[0]
+    return (total_prob / traj.shape[0]).astype(np.float32)
 
-def _wrap_calc_pbc(args):
-    sub_xyz, sub_box, mu, rc, p = args
-    return _calc_pbc_hic_cpu_serial(sub_xyz, sub_box, mu, rc, p)
-
-def _calc_pbc_hic_gpu(traj, boxes, mu, rc, p=None, batch_size=None):
+# already implemented in _calc_HiC_from_traj_array_gpu
+r'''def _calc_pbc_hic_gpu(traj, boxes, mu, rc, p=None, batch_size=None):
     """
     GPU implementation of PBC Hi-C with smooth probability.
     """
@@ -632,7 +669,7 @@ def _calc_pbc_hic_gpu(traj, boxes, mu, rc, p=None, batch_size=None):
             cumulative_prob += prob
             
     hic_matrix = cumulative_prob / n_frames
-    return cp.asnumpy(hic_matrix)
+    return cp.asnumpy(hic_matrix)'''
 
 
 
