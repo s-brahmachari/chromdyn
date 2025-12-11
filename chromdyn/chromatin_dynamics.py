@@ -5,6 +5,7 @@ from openmm.app import Simulation, Topology
 import openmm.unit as unit
 from typing import List, Dict, Union, Any
 from numpy.typing import NDArray
+from importlib import metadata
 from .platforms import PlatformManager
 from .integrators import IntegratorManager
 from .forcefield import ForceFieldManager
@@ -30,19 +31,21 @@ class ChromatinDynamics:
     ) -> None:
 
         self.name = name
+        self.version = _get_version()
         if write_logs:
             self.output_dir = Path(output_dir)
             self.output_dir.mkdir(parents=True, exist_ok=True)
-            
-            self.logger = LogManager(log_file=self.output_dir / f"{name}.log").get_logger(
-                __name__, console=console_stream
-            )
+
+            self.logger = LogManager(
+                log_file=self.output_dir / f"{name}.log"
+            ).get_logger(__name__, console=console_stream)
         else:
             self.output_dir = None
             self.logger = LogManager().get_logger(__name__, console=console_stream)
 
         self.logger.info("*" * 60)
-        self.logger.info(f"{'Chromatin Dynamics':^60}")
+        self.logger.info(f"{f'chromdyn v{self.version} : Chromatin Dynamics':^60}")
+        # self.logger.info(f"{'':^60}")
         self.logger.info("*" * 60)
 
         self.topology = topology
@@ -136,6 +139,7 @@ class ChromatinDynamics:
             )
             self.simulation.reporters.append(self.reporters["energy"])
             self.logger.info(f"Energy reporter created: {path}")
+
         if stability_check:
             path = self.output_dir / f"{self.name}_stability_report.txt"
             self.reporters["stability"] = StabilityReporter(
@@ -298,3 +302,10 @@ class ChromatinDynamics:
 
     def __repr__(self) -> str:
         return f"<ChromatinDynamics(name={self.name}, particles={self.num_particles}, output_dir={self.output_dir})>"
+
+
+def _get_version() -> str:
+    try:
+        return metadata.version("chromdyn")
+    except metadata.PackageNotFoundError:
+        return "0.0.0+unknown"

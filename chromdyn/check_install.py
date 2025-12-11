@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 from typing import Optional
-from importlib import metadata
 
 try:
     import openmm
     import openmm.unit as unit
 except ImportError:
     openmm = None  # type: ignore[assignment]
-    unit = None    # type: ignore[assignment]
+    unit = None  # type: ignore[assignment]
 
 try:
     import chromdyn
@@ -25,12 +24,11 @@ def _check_chromdyn_import() -> None:
     """
     if chromdyn is None:
         raise ImportError("chromdyn is not importable.")
-    
-    ver: Optional[str] = metadata.version("chromdyn")
+
+    ver: Optional[str] = chromdyn.__version__
     if ver is None:
         ver = "UNKNOWN"
     print(f"chromdyn version: {ver}\n")
-    
 
 
 def _check_openmm() -> None:
@@ -110,7 +108,7 @@ def main() -> None:
     # Check chromdyn import
     try:
         _check_chromdyn_import()
-        results.append(f"✔ chromdyn import: OK")
+        results.append("✔ chromdyn import: OK")
     except Exception as exc:  # noqa: BLE001
         results.append(f"✘ chromdyn import: FAILED ({type(exc).__name__}: {exc})")
         print("\n".join(results))
@@ -121,7 +119,9 @@ def main() -> None:
         _check_openmm()
         results.append("✔ OpenMM import & platforms: OK")
     except Exception as exc:  # noqa: BLE001
-        results.append(f"✘ OpenMM import/platforms: FAILED ({type(exc).__name__}: {exc})")
+        results.append(
+            f"✘ OpenMM import/platforms: FAILED ({type(exc).__name__}: {exc})"
+        )
         print("\n".join(results))
         raise SystemExit(1)
 

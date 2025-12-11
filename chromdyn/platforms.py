@@ -66,7 +66,7 @@ class PlatformManager:
         """
         List available OpenMM platforms and their estimated speed.
         """
-        self.logger.info("-" * 80)
+        self.logger.info("-" * 50)
         self.logger.info(
             f"Number of available OpenMM platforms: {len(self.available_platforms)}"
         )
@@ -79,4 +79,4 @@ class PlatformManager:
             speed = platform.getSpeed()
             line = f"{i:<8} {platform_name:<20} {speed:<20}"
             self.logger.info(line)
-        self.logger.info("-" * 80)
+        self.logger.info("-" * 50)
