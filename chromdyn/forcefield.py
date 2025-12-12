@@ -65,7 +65,7 @@ class ForceFieldManager:
             # get box vector
             box_vectors = self.system.getDefaultPeriodicBoxVectors()
             if box_vectors[0].x == 0 and box_vectors[1].y == 0 and box_vectors[2].z == 0:
-                self.logger.warning("CRITICAL WARNING: PBC requested but DefaultPeriodicBoxVectors are zero! PBC will likely fail.")
+                self.logger.warning("PBC requested but DefaultPeriodicBoxVectors are zero! PBC will likely fail.")
                 min_box_dim = 99999.9 # avoid division by zero, but OpenMM will still throw an error
             else:
                 lengths = [box_vectors[0].x, box_vectors[1].y, box_vectors[2].z]
@@ -75,7 +75,7 @@ class ForceFieldManager:
             if self.Nonbonded_cutoff > min_box_dim / 2.0:
                 new_cutoff = min_box_dim / 2.0 - 0.01  # slightly adjust in case of float error
                 self.logger.warning(
-                    f"WARNING: Requested cutoff {self.Nonbonded_cutoff} nm is too large for "
+                    f"Requested cutoff {self.Nonbonded_cutoff} nm is too large for "
                     f"box dimension {min_box_dim} nm. Clamping cutoff to {new_cutoff:.4f} nm."
                 )
                 self.Nonbonded_cutoff = new_cutoff
