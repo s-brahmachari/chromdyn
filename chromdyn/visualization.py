@@ -1,480 +1,44 @@
+"""
+Visualization module for ChromDyn.
+This module is an optional dependency. It requires 'matplotlib' to be installed.
+"""
+import warnings
 import numpy as np
-import h5py
-import os
-import matplotlib.pyplot as plt
-from matplotlib.animation import FuncAnimation, PillowWriter, FFMpegWriter
-from mpl_toolkits.mplot3d import Axes3D
-from matplotlib import cm
-from scipy.spatial.distance import pdist
-import json
-from mpl_toolkits.mplot3d.art3d import Line3DCollection
-import matplotlib.colors as mcolors
-from .traj_utils import Analyzer
-from .topology import TopologyData
-import itertools
+from typing import Optional, Union, Any
 
-r'''class TopologyData:
-    """
-    Helper class to access topology data via attributes.
-    Parses the nested JSON dictionary into flat statistics.
-    """
-    def __init__(self, data_dict):
-        # Raw data
-        self.chains = data_dict.get("chains", [])
-        self.bonds = data_dict.get("bonds", [])
-        
-        # --- Pre-calculated Statistics (What you asked for) ---
-        
-        # 1. Number of Chains
-        self.n_chains = len(self.chains)
-        
-        # 2. Number of Bonds
-        self.n_bonds = len(self.bonds)
-        
-        # 3. Total Number of Atoms (Beads)
-        self.n_atoms = 0
-        self._calculate_atoms()
-
-    def _calculate_atoms(self):
-        """Internal helper to count atoms."""
-        count = 0
-        for chain in self.chains:
-            for residue in chain['residues']:
-                count += len(residue['atoms'])
-        self.n_atoms = count
-
-    @property
-    def chain_info(self):
-        """
-        Returns a summary list of tuples: [(ChainID, NumAtoms), ...]
-        Example: [('C1', 100), ('C2', 50)]
-        """
-        info = []
-        for chain in self.chains:
-            # Count atoms in this chain
-            n_atoms_in_chain = sum(len(res['atoms']) for res in chain['residues'])
-            info.append((chain['id'], n_atoms_in_chain))
-        return info
-
-    def __repr__(self):
-            return (f"<TopologyData: {self.n_chains} chains, "
-                    f"{self.n_atoms} beads, {self.n_bonds} bonds>")
-
-        '''
-class ChromatinTrajectory:
-    def __init__(self, filename: str = None):
-        # initialize attributes
-        self.cndb = None
-        self.filename = filename
-        self.Nbeads = 0
-        self.Nframes = 0
-        self.ChromSeq = []
-        self.uniqueChromSeq = set()
-        self.dictChromSeq = {}
-        self.topology = None
-        self.box_vectors = None
-
-        # if filename is provided, load the trajectory
-        if filename:
-            self.load(filename)
-
-    def load(self, filename: str):
-        """call external load_trajectory function"""
-        return load_trajectory(self, filename)
-
-    def xyz(self, frames=[0, None, 1], beadSelection=None, XYZ=[0, 1, 2]):
-        """call external get_xyz function"""
-        return get_xyz(self, frames, beadSelection, XYZ)
-    
-    def close(self):
-        """call external close_trajectory function"""
-        close_trajectory(self)
-
-    def __del__(self):
-        """destruct the object and try to close the file"""
-        self.close()
-
-# For using as independent functions
-# self should be the object of the class ChromatinTrajectory
-def ndb2cndb(self, filename):
-        R"""
-        Converts an **ndb** file format to **cndb**.
-        
-        Args:
-            filename (path, required):
-                 Path to the ndb file to be converted to cndb.
-        """
-        Main_chrom      = ['ChrA','ChrB','ChrU'] # Type A B and Unknow
-        Chrom_types     = ['ZA','OA','FB','SB','TB','LB','UN']
-        Chrom_types_NDB = ['P ','S ','B1','B2','B3','B4','UN'] #P-A1, S-A2 to make it compatible with or systems
-        Res_types_PDB   = ['ASP', 'GLU', 'ARG', 'LYS', 'HIS', 'HIS', 'GLY']
-        Type_conversion = {'P ': 0,'S ' : 1,'B1' : 2,'B2' : 3,'B3' : 4,'B4' : 5,'UN' : 6}
-        title_options = ['HEADER','OBSLTE','TITLE ','SPLT  ','CAVEAT','COMPND','SOURCE','KEYWDS','EXPDTA','NUMMDL','MDLTYP','AUTHOR','REVDAT','SPRSDE','JRNL  ','REMARK']
-        model          = "MODEL     {0:4d}"
-        atom           = "ATOM  {0:5d} {1:^4s}{2:1s}{3:3s} {4:1s}{5:4d}{6:1s}   {7:8.3f}{8:8.3f}{9:8.3f}{10:6.2f}{11:6.2f}          {12:>2s}{13:2s}"
-        ter            = "TER   {0:5d}      {1:3s} {2:1s}{3:4d}{4:1s}"
-
-        file_ndb = filename + str(".ndb")
-        name     = filename + str(".cndb")
-
-        if os.path.exists(name):
-            print(f"File '{name}' already exists. Skipping conversion.")
-            return name  # File already exists
-
-        cndbf = h5py.File(name, 'w')
-        
-        ndbfile = open(file_ndb, "r")
-        
-        loop = 0
-        types = []
-        types_bool = True
-        loop_list = []
-        x = []
-        y = [] 
-        z = []
-
-        frame = 0
-
-        for line in ndbfile:
-    
-            entry = line[0:6]
-
-            info = line.split()
-
-
-            if 'MODEL' in entry:
-                frame += 1
-
-                inModel = True
-
-            elif 'CHROM' in entry:
-
-                subtype = line[16:18]
-                #print(subtype)
-
-                types.append(subtype)
-                x.append(float(line[40:48]))
-                y.append(float(line[49:57]))
-                z.append(float(line[58:66]))
-
-            elif 'END' in entry:
-                if types_bool:
-                    typelist = [Type_conversion[x] for x in types]
-                    #print(typelist)
-                    cndbf['types'] = typelist
-                    types_bool = False
-
-                positions = np.vstack([x,y,z]).T
-                cndbf[str(frame)] = positions
-                x = []
-                y = []
-                z = []
-
-            elif 'LOOPS' in entry:
-                loop_list.append([int(info[1]), int(info[2])])
-                loop += 1
-        
-        if loop > 0:
-            cndbf['loops'] = loop_list
-
-        cndbf.close()
-        return(name)
-
-def load_trajectory(self, filename):
-    R"""
-    Loads cndb file, including types, topology, and PBC box vectors.
-    """
-    self.filename = filename
-    if not os.path.exists(filename):
-        raise FileNotFoundError(f"File not found: {filename}")
-
-    self.cndb = h5py.File(filename, 'r')
-
-    frame_keys = sorted([k for k in self.cndb.keys() if k.isdigit()], key=int)
-    self.Nframes = len(frame_keys)
-    
-    if self.Nframes == 0:
-        print("Warning: No frames found in file.")
-        return self
-
-    # --- 1. Load Bead Number ---
-    first_frame_data = self.cndb[frame_keys[0]]
-    self.Nbeads = first_frame_data.shape[0]
-    
-    # --- 2. Load Types ---
-    if 'types' in self.cndb:
-        raw_types = self.cndb['types']
-        self.ChromSeq = [t.decode('utf-8') if isinstance(t, bytes) else t for t in raw_types]
-    else:
-        print("  Warning: 'types' dataset not found. Assuming uniform bead types.")
-        first_key = next(iter(self.cndb.keys()))
-        n_beads = self.cndb[first_key].shape[0]
-        self.ChromSeq = ['U'] * n_beads
-
-    self.uniqueChromSeq = set(self.ChromSeq)
-    self.dictChromSeq = {tt: [i for i, e in enumerate(self.ChromSeq) if e == tt] for tt in self.uniqueChromSeq}
-
-    # --- 3. Load Topology JSON---
-    self.topology = None
-    if 'topology_json' in self.cndb:
-        try:
-            json_str = self.cndb['topology_json'][0]
-            if isinstance(json_str, bytes): json_str = json_str.decode('utf-8')
-            self.topology = TopologyData(json.loads(json_str))
-        except Exception as e:
-            print(f"  Warning: Failed to load topology data: {e}")
-
-    # --- 4. Load Box Vectors ---
-    # We check the first frame to see if box attribute exists
-    if 'box' in first_frame_data.attrs:
-        self.box_vectors = np.zeros((self.Nframes, 3, 3))
-        for i, key in enumerate(frame_keys):
-            if 'box' in self.cndb[key].attrs:
-                self.box_vectors[i] = self.cndb[key].attrs['box']
-            else:
-                # If one frame is missing, use the previous frame or raise an error
-                if i > 0: self.box_vectors[i] = self.box_vectors[i-1]
-    else:
-        self.box_vectors = None
-
-    print(f"Loaded {self.filename}: {self.Nframes} frames, {self.Nbeads} beads.")
-    if self.topology: print(f"Topology: {self.topology}")
-    if self.box_vectors is not None: print(f"Box vectors loaded. Shape: {self.box_vectors.shape}")
-    
-    return self
-    
-def get_xyz(self, frames=[0, None, 1], beadSelection=None, XYZ=[0, 1, 2]):
-    R"""
-    Get the selected beads' 3D position from a **cndb** or **ndb** for multiple frames.
-    """
-    if self.cndb is None:
-        raise RuntimeError("No file loaded. Call load() first.")
-    # initialize frame list
-    frame_list = []
-    # check beadSelection 
-    if beadSelection is None:
-        selection = np.arange(self.Nbeads)
-    else:
-        selection = np.array(beadSelection)
-    #print(f"Choosing Beads ID: {selection}")
-
-    # check frames number
-    start, end, step = frames
-    if end is None:
-        end = self.Nframes #+ 1 I'm not sure if I need this, in OpenMiChroM one'll need that.
-
-    # simple range check
-    if start < 0: start = 0
-    if end > self.Nframes: end = self.Nframes
-
-    for i in range(start, end, step):
-        try:
-            key = str(i)
-            if key not in self.cndb:
-                continue
-            frame_data = np.array(self.cndb[key])
-            #print(f"Data structure of frame {i}: {frame_data.shape}")
-            selected_data = np.take(np.take(frame_data, selection, axis=0), XYZ, axis=1)
-            #coords = frame_data[selection][:, XYZ]
-            frame_list.append(selected_data)
-        except KeyError:
-            print(f"Warning: Frame {i} doesn't exit, skip this frame")
-        except Exception as e:
-            print(f"Error occurs: {e} when extract data from frame {i}.")
-
-    # Return the extracted data
-    return np.array(frame_list)
-
-def close_trajectory(traj_instance):
-    if hasattr(traj_instance, 'cndb') and traj_instance.cndb:
-        traj_instance.cndb.close()
-
-
-#Check if cupy is available
 try:
-    import cupy as cp
-    print("Cupy is available")
-    import cupy as cp
-    #from cupy import fft
-    from typing import Dict, Tuple, Union, List
-    # velocity autocorrelation function
-    def _autocorrFFT_gpu(x_multi_dim: cp.ndarray) -> cp.ndarray:
-        """
-        (Vectorized, GPU) using cupy FFT to calculate autocorrelation of multi-dimensional array.
-        """
-        N = x_multi_dim.shape[0]
-        
-        # RATIONALE: excecute FFT on GPU
-        F = cp.fft.fft(x_multi_dim, n=2*N, axis=0)
-        res = cp.fft.ifft(F * F.conjugate(), axis=0)
-        res = res[:N, ...].real # 在 GPU 上切片
-        
-        # RATIONALE: create normalization vector on GPU
-        norm_shape = [N] + [1] * (x_multi_dim.ndim - 1)
-        norm = (N - cp.arange(0, N)).reshape(norm_shape)
-        
-        return res / norm
+    import matplotlib.pyplot as plt
+    import matplotlib.colors as mcolors
+    from matplotlib import cm
+    from matplotlib.animation import FuncAnimation, PillowWriter, FFMpegWriter
+    from mpl_toolkits.mplot3d import Axes3D
+    from mpl_toolkits.mplot3d.art3d import Line3DCollection
+    
+    MATPLOTLIB_AVAILABLE = True
 
-    def calculate_vacf_gpu(
-        velocities: np.ndarray,
-        bead_types: np.ndarray,
-        sampling_step: int = 1
-    ) -> Dict[str, np.ndarray]:
-        """
-        (Vectorized, GPU) using cupy to calculate velocity autocorrelation function (VACF) C(t).
-        """
-        type_indices = {utype: np.where(bead_types == utype)[0] for utype in bead_types}   
+except ImportError as e:
+    # catch specific ImportError to know if matplotlib or mpl_toolkits is missing
+    warnings.warn(f"Visualization dependencies not available: {e}")
+    MATPLOTLIB_AVAILABLE = False
+    
+    # define empty variables to prevent IDE static checks from Error
+    plt = None
+    Axes3D = None
+    FuncAnimation = None
+    PillowWriter = None
+    FFMpegWriter = None
+    Line3DCollection = None
 
-        # 1. sample on CPU to save VRAM
-        sampled_vels_np = velocities[::sampling_step, :, :]
-        
-        # 2. transfer data to GPU
-        sampled_vels_cp = cp.asarray(sampled_vels_np)
-        
-        # 3. calculate VACF on GPU
-        vacf_components_cp = _autocorrFFT_gpu(sampled_vels_cp)
-        
-        # 4. sum (Cx + Cy + Cz) and transpose
-        vacf_all_beads_cp = cp.sum(vacf_components_cp, axis=2).T
-                
-        # 5. calculate average on GPU by type
-        results_cp = {}
-        results_cp['general'] = cp.mean(vacf_all_beads_cp, axis=0)
-        
-        # transfer index to GPU for fancy indexing
-        type_indices_cp = {k: cp.asarray(v) for k, v in type_indices.items()}
-        
-        for btype, indices_cp in type_indices_cp.items():
-            if len(indices_cp) > 0:
-                results_cp[btype] = cp.mean(vacf_all_beads_cp[indices_cp, :], axis=0)
-                
-        # 6. transfer final small result array back to CPU
-        results_np = {k: cp.asnumpy(v) for k, v in results_cp.items()}
-        
-        # 7. clean GPU memory
-        del sampled_vels_cp, vacf_components_cp, vacf_all_beads_cp, results_cp, type_indices_cp
-        
-        return results_np
+# Helper function to raise error if matplotlib is missing
+def _check_matplotlib():
+    """Helper function to raise error if matplotlib is missing."""
+    if not MATPLOTLIB_AVAILABLE:
+        raise ImportError(
+            "Visualization features require 'matplotlib'. "
+            "Please install it via 'pip install matplotlib'."
+        )
 
-    def calculate_spatial_vel_corr_gpu(
-        coords: np.ndarray,
-        velocities: np.ndarray,
-        bead_types: np.ndarray,
-        dist_range: float,
-        sampling_step: int = 1,
-        num_bins: int = 50
-    ) -> Dict[str, np.ndarray]:
-        """
-        (Vectorized, GPU) calculate spatial velocity correlation C(r) = <v_i · v_j>.
-        
-        In CPU, loop over frames, but calculate all O(N^2) on GPU.
-        """
-        n_frames, n_beads, _ = coords.shape
-        
-        # 1. set Bins and type pairs (lightweight on CPU)
-        bins = np.linspace(0, dist_range, num_bins + 1, dtype=np.float32)
-        bin_centers = (bins[:-1] + bins[1:]) / 2.0
-        
-        unique_types = np.unique(bead_types)
-        type_pairs = ["-".join(sorted(pair)) for pair in np.array(np.meshgrid(unique_types, unique_types)).T.reshape(-1, 2)]
-        type_pairs = sorted(list(set(type_pairs)))
-        
-        # --- 2. RATIONALE: pre-calculate masks and *once* transfer to GPU ---
-        rows, cols = np.triu_indices(n_beads, k=1)
-        rows_cp = cp.asarray(rows)
-        cols_cp = cp.asarray(cols)
-        
-        bead_types_i = bead_types[rows]
-        bead_types_j = bead_types[cols]
-        
-        pair_masks_cp = {}
-        for key in type_pairs:
-            t1, t2 = key.split('-')
-            if t1 == t2:
-                mask = (bead_types_i == t1) & (bead_types_j == t2)
-            else:
-                mask = ((bead_types_i == t1) & (bead_types_j == t2)) | \
-                    ((bead_types_i == t2) & (bead_types_j == t1))
-            pair_masks_cp[key] = cp.asarray(mask)
 
-        bins_cp = cp.asarray(bins)
-
-        # 3. RATIONALE: initialize accumulators on GPU
-        total_corr_cp = {key: cp.zeros(num_bins) for key in ['general'] + type_pairs}
-        counts_cp = {key: cp.zeros(num_bins) for key in ['general'] + type_pairs}
-
-        # 4. loop over sampled frames on CPU
-        for frame_idx in range(0, n_frames, sampling_step):
-            
-            # 5. RATIONALE: transfer *only the current frame* to GPU
-            frame_coords_cp = cp.asarray(coords[frame_idx], dtype=cp.float32)
-            frame_vels_cp = cp.asarray(velocities[frame_idx], dtype=cp.float32)
-            
-            # 6. RATIONALE: execute all O(N^2) calculations on GPU
-            
-            # a. distance matrix: use broadcast (N, 1, 3) - (1, N, 3) -> (N, N, 3) -> (N, N)
-            dist_matrix_cp = cp.linalg.norm(frame_coords_cp[:, None, :] - frame_coords_cp[None, :, :], axis=2)
-            
-            # b. dot product matrix: (N, 3) @ (3, N) -> (N, N)
-            v_dot_v_cp = frame_vels_cp @ frame_vels_cp.T
-            
-            # c. extract upper triangle
-            all_dists_cp = dist_matrix_cp[rows_cp, cols_cp]
-            all_dots_cp = v_dot_v_cp[rows_cp, cols_cp]
-            
-            # d. digitize
-            all_bin_indices_cp = cp.digitize(all_dists_cp, bins_cp[1:])
-            
-            # 7. RATIONALE: use bincount on GPU for vectorized accumulation
-            valid_mask_cp = (all_bin_indices_cp < num_bins)
-            
-            # accumulate 'general'
-            valid_bins_cp = all_bin_indices_cp[valid_mask_cp]
-            valid_dots_cp = all_dots_cp[valid_mask_cp]
-            total_corr_cp['general'] += cp.bincount(valid_bins_cp, weights=valid_dots_cp, minlength=num_bins)
-            counts_cp['general'] += cp.bincount(valid_bins_cp, minlength=num_bins)
-            
-            # accumulate by type
-            for key, type_mask_cp in pair_masks_cp.items():
-                final_mask_cp = valid_mask_cp & type_mask_cp
-                if cp.any(final_mask_cp):
-                    type_bins_cp = all_bin_indices_cp[final_mask_cp]
-                    type_dots_cp = all_dots_cp[final_mask_cp]
-                    total_corr_cp[key] += cp.bincount(type_bins_cp, weights=type_dots_cp, minlength=num_bins)
-                    counts_cp[key] += cp.bincount(type_bins_cp, minlength=num_bins)
-
-        # 8. calculate final average on GPU
-        results_cp = {}
-        for key in total_corr_cp:
-            
-            # replace where to be compatible with old version of cupy
-
-            # 1. copy counts to avoid modifying original accumulators
-            counts_safe_cp = counts_cp[key].copy()
-            
-            # 2. create mask for all bins with count 0
-            zero_mask_cp = (counts_safe_cp == 0)
-            
-            # 3. replace these 0s with 1.0. This doesn't affect the result,
-            #    because we will set these positions to NaN later.
-            counts_safe_cp[zero_mask_cp] = 1.0 
-            
-            # 4. perform regular division (now safe)
-            corr_cp = total_corr_cp[key] / counts_safe_cp
-            
-            # 5. set positions marked as 0 to NaN
-            corr_cp[zero_mask_cp] = cp.nan
-            
-            results_cp[key] = corr_cp
-                
-        # 9. transfer final small result array back to CPU
-        results_np = {k: cp.asnumpy(v) for k, v in results_cp.items()}
-        results_np['bin_centers'] = bin_centers
-                
-        return results_np
-except ImportError:
-    print("Cupy is not available, cannot load velocity analysis functoin.")
-        
 # Plotting
 
 def _draw_pbc_box(ax, box_a, center=np.array([0,0,0]), color="gray", linestyle="--", linewidth=1, alpha=0.7):
@@ -516,6 +80,9 @@ def recenter_coordinates_v3(polymer_coords_list, box_vectors):
     Returns:
         list of np.ndarray: Recentered coordinates.
     """
+
+    _check_matplotlib()
+
     if not polymer_coords_list or not any(chain.size > 0 for chain in polymer_coords_list):
         return polymer_coords_list
 
@@ -614,6 +181,8 @@ def visualize(traj, select_frame=0, axis_limits=None,
         types (list): Custom type sequence to override trajectory types.
         PBC (bool): If True, draw periodic boundary box and use box-based recentering (default: False).
     """
+
+    _check_matplotlib()
 
     if PBC:
         recenter = True
@@ -859,6 +428,8 @@ def visualize_animation(traj, start_frame=0, end_frame=None, fps=20,
     Returns:
         Animation object if no outputName is provided.
     """
+    _check_matplotlib()
+
     if PBC:
         recenter = True
         print("PBC is True, recentering coordinates automatically.")
@@ -1080,61 +651,8 @@ def visualize_animation(traj, start_frame=0, end_frame=None, fps=20,
         return anim
 
 
-
-def compute_RG_type(traj):
-    """
-    Function to compute Radius of Gyration (Rg) classified by particle type.
-    
-    Parameters:
-        traj: Trajectory object, which must contain the following attributes:
-              - traj.xyz: Coordinate array with shape (T, N, 3)
-              - traj.ChromSeq: A list or array of length N, containing bead types (e.g., 'A', 'B')
-              
-    Returns:
-        results (dict): A dictionary containing Rg data.
-                        key: 'general' and each type name (e.g., 'A', 'B')
-                        value: Corresponding Rg numpy array (of length T)
-    """
-    # 1. Get coordinates and sequence
-    # Ensure xyz is numpy array
-    all_positions = np.asarray(traj.xyz(frames=[0, None, 1], beadSelection=None))
-    # Ensure ChromSeq is numpy array for boolean indexing
-    bead_types = np.asarray(traj.ChromSeq)
-    
-    # 2. Initialize result dictionary
-    results = {}
-    
-    # 3. Calculate 'general' Rg (all beads)
-    # Always calculate this
-    results['general'] = Analyzer.compute_RG(all_positions)
-    
-    # 4. Check if system is Homogeneous (Homogeneous)
-    # np.unique returns sorted unique type list
-    unique_types = np.unique(bead_types)
-    
-    # If type count is greater than 1, it's a Heterogeneous (Heterogeneous) system, need to calculate by type
-    if len(unique_types) > 1:
-        for t_type in unique_types:
-            # Create boolean mask (Boolean Mask)
-            # mask length equals beads count, True means current type
-            mask = (bead_types == t_type)
-            
-            # Slice
-            # Dimension meaning: [all frames, mask filtered column(beads), all coordinates]
-            subset_positions = all_positions[:, mask, :]
-            
-            # Ensure type name is string format as key
-            key_name = str(t_type)
-            
-            # Calculate Rg for this type and store in dictionary
-            results[key_name] = Analyzer.compute_RG(subset_positions)
-            
-    # If len(unique_types) == 1, loop is skipped, only returns general, avoid duplicate calculation
-            
-    return results
-
-
-
+# This function actually relies on the topology format inside cndb files
+# if we use a different format, we need to modify this function
 def visualize_pbc_images(traj, select_frame=0, n_layers=1, 
                          image_alpha=0.15, image_style='scatter',
                          axis_limits=None, colors=None, outputName=None, 
@@ -1143,6 +661,7 @@ def visualize_pbc_images(traj, select_frame=0, n_layers=1,
     """
     Visualize central polymer AND periodic images with correct physical sizing.
     """
+    _check_matplotlib()
     
     # --- 1. Data Loading ---
     if not hasattr(traj, 'topology') or traj.topology is None:
