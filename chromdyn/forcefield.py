@@ -47,6 +47,52 @@ class ForceFieldManager:
         self.force_name_map: Dict[int, str] = {}
         self.exclude_bonds_from_NonBonded = exclude_bonds_from_NonBonded
 
+    def set_nonbonded_method(self, method: str) -> None:
+        """Update nonbonded method for this manager and all existing CustomNonbondedForce objects.
+        method ∈ {'NonPeriodic','Periodic'}.
+        """
+        from openmm import CustomNonbondedForce
+
+        self.Nonbonded_method = (
+            CustomNonbondedForce.CutoffNonPeriodic
+            if method == "NonPeriodic"
+            else CustomNonbondedForce.CutoffPeriodic
+        )
+
+        if method == "Periodic":
+            # get box vector
+            box_vectors = self.system.getDefaultPeriodicBoxVectors()
+            if (
+                box_vectors[0].x == 0
+                and box_vectors[1].y == 0
+                and box_vectors[2].z == 0
+            ):
+                self.logger.warning(
+                    "PBC requested but DefaultPeriodicBoxVectors are zero! PBC will likely fail."
+                )
+                min_box_dim = 99999.9  # avoid division by zero, but OpenMM will still throw an error
+            else:
+                lengths = [box_vectors[0].x, box_vectors[1].y, box_vectors[2].z]
+                min_box_dim = min(lengths)
+
+            # check cutoff
+            if self.Nonbonded_cutoff > min_box_dim / 2.0:
+                new_cutoff = (
+                    min_box_dim / 2.0 - 0.01
+                )  # slightly adjust in case of float error
+                self.logger.warning(
+                    f"Requested cutoff {self.Nonbonded_cutoff} nm is too large for "
+                    f"box dimension {min_box_dim} nm. Clamping cutoff to {new_cutoff:.4f} nm."
+                )
+                self.Nonbonded_cutoff = new_cutoff
+
+        for name, force in self.forceDict.items():
+            if force.__class__.__name__ == "CustomNonbondedForce":
+                force.setNonbondedMethod(self.Nonbonded_method)
+                force.setCutoffDistance(self.Nonbonded_cutoff)
+                print(f"Updated nonbonded method for {name} to {method}.")
+                self.logger.info(f"Updated nonbonded method for {name} to {method}.")
+
     def register_force(self, force_obj: object, name: str, **kwargs: Any) -> None:
         if (
             self.exclude_bonds_from_NonBonded
