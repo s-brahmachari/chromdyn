@@ -7,6 +7,7 @@
 #  * --------------------------------------------------------------------------- *
 
 import time
+import numpy as np
 from pathlib import Path
 from openmm import System, Vec3
 from openmm.app import Simulation, Topology
@@ -83,7 +84,13 @@ class ChromatinDynamics:
         self,
         init_struct: Union[str, NDArray] = "randomwalk",
         PBC: bool = False,
-        box_vectors: Optional[Tuple[Tuple[float,float,float], Tuple[float,float,float], Tuple[float,float,float]]] = None,
+        box_vectors: Optional[
+            Tuple[
+                Tuple[float, float, float],
+                Tuple[float, float, float],
+                Tuple[float, float, float],
+            ]
+        ] = None,
         integrator: str = "langevin",
         temperature: float = 120.0,
         timestep: float = 0.01,
@@ -96,20 +103,21 @@ class ChromatinDynamics:
         pos_report_interval: int = 1000,
     ) -> None:
         """Sets up the integrator, platform, context, and attaches reporters."""
-        
+
         # ---- Periodic boundary conditions (optional) ----
         if PBC:
-            assert box_vectors is not None, \
-                "When PBC=True, supply box_vectors=((Lx,0,0),(0,Ly,0),(0,0,Lz)) in nanometers."
+            assert (
+                box_vectors is not None
+            ), "When PBC=True, supply box_vectors=((Lx,0,0),(0,Ly,0),(0,0,Lz)) in nanometers."
             a = Vec3(*box_vectors[0])
             b = Vec3(*box_vectors[1])
             c = Vec3(*box_vectors[2])
             # Set the periodic box on the System BEFORE creating the Context
             self.system.setDefaultPeriodicBoxVectors(a, b, c)
             # Ensure all existing/future nonbonded forces use CutoffPeriodic
-            self.force_field_manager.set_nonbonded_method('Periodic')
+            self.force_field_manager.set_nonbonded_method("Periodic")
         else:
-            self.force_field_manager.set_nonbonded_method('NonPeriodic')
+            self.force_field_manager.set_nonbonded_method("NonPeriodic")
 
         self.integrator_manager = IntegratorManager(
             integrator=integrator,
@@ -139,21 +147,21 @@ class ChromatinDynamics:
                 3,
             ), "init_struct shape != (num_particles,3)"
             positions, msg = init_struct, "User defined initial configuration loaded"
-        
+
         # Wrap initial coordinates into the primary cell (keeps bonds near minimum image)
         if PBC:
             # Get box lengths from the System (nm)
             a_vec, b_vec, c_vec = self.system.getDefaultPeriodicBoxVectors()
-            Lx, Ly, Lz = a_vec.x, b_vec.y, c_vec.z
-            import numpy as np
+            # Lx, Ly, Lz = a_vec.x, b_vec.y, c_vec.z
+
             pos = np.asarray(positions, dtype=float)
-            #pos[:, 0] = pos[:, 0] % Lx
-            #pos[:, 1] = pos[:, 1] % Ly
-            #pos[:, 2] = pos[:, 2] % Lz
+            # pos[:, 0] = pos[:, 0] % Lx
+            # pos[:, 1] = pos[:, 1] % Ly
+            # pos[:, 2] = pos[:, 2] % Lz
             positions = pos
 
         self.simulation.context.setPositions(positions)
-        
+
         self.logger.info(msg)
         self.logger.info("Simulation context initialized.")
         self.print_force_info()
@@ -161,8 +169,10 @@ class ChromatinDynamics:
         if save_pos:
             path = self.output_dir / f"{self.name}_positions.cndb"
             self.reporters["position"] = SaveStructure(
-                path, reportInterval=pos_report_interval,
-                topology = self.topology, PBC=PBC
+                path,
+                reportInterval=pos_report_interval,
+                topology=self.topology,
+                PBC=PBC,
             )
             self.simulation.reporters.append(self.reporters["position"])
             self.logger.info(f"Position reporter created: {path}")

@@ -15,13 +15,16 @@ from scipy.ndimage import median_filter, uniform_filter
 from scipy.spatial.distance import pdist, squareform
 import h5py
 from typing import Optional
+
 # from cndb_tools import ChromatinTrajectory
 
 try:
     import cupy as cp
+
     CUPY_AVAILABLE = True
 except ImportError:
     CUPY_AVAILABLE = False
+
 
 class HiCManager:
     def __init__(
@@ -287,15 +290,15 @@ class HiCManager:
         return inputs
 
     def gen_hic_from_cndb(
-        self, 
-        traj_file, 
-        mu, 
-        rc, 
-        p=None, 
-        platform='CPU', 
-        parallel: bool = True, # RE-INTRODUCED this parameter
-        skip_frames=1, 
-        batch_size: Optional[int] = None
+        self,
+        traj_file,
+        mu,
+        rc,
+        p=None,
+        platform="CPU",
+        parallel: bool = True,  # RE-INTRODUCED this parameter
+        skip_frames=1,
+        batch_size: Optional[int] = None,
     ):
         """
         (Version 3.1: Corrected handling of the 'parallel' parameter for CPU mode)
@@ -313,58 +316,81 @@ class HiCManager:
                                         If None, processes all frames at once.
         """
         xyz = self.cndb_to_numpy(traj_file, skip_frames=skip_frames)
-        
-        if platform.upper() == 'CPU' and batch_size is not None:
-            self.logger.warning("`batch_size` is specified but `platform` is 'CPU'. The batching parameter will be ignored.")
-        
-        if platform.upper() == 'CUDA':
+
+        if platform.upper() == "CPU" and batch_size is not None:
+            self.logger.warning(
+                "`batch_size` is specified but `platform` is 'CPU'. The batching parameter will be ignored."
+            )
+
+        if platform.upper() == "CUDA":
             if CUPY_AVAILABLE and cp.cuda.runtime.getDeviceCount() > 0:
                 self.logger.info("Computing HiC on CUDA platform...")
-                hic = _calc_HiC_from_traj_array_gpu(xyz, mu, rc, p, boxes=None, batch_size=batch_size) # force boxes=None to avoid PBC image included
+                hic = _calc_HiC_from_traj_array_gpu(
+                    xyz, mu, rc, p, boxes=None, batch_size=batch_size
+                )  # force boxes=None to avoid PBC image included
                 self.logger.info(f"Generated HiC matrix of shape: {hic.shape}")
             else:
-                self.logger.warning("CUDA platform selected, but CuPy/GPU not available. Falling back to CPU.")
-                platform = 'CPU'
-        
-        if platform.upper() == 'CPU':
-            serialize = not parallel # Directly use the 'parallel' flag
-            
+                self.logger.warning(
+                    "CUDA platform selected, but CuPy/GPU not available. Falling back to CPU."
+                )
+                platform = "CPU"
+
+        if platform.upper() == "CPU":
+            serialize = not parallel  # Directly use the 'parallel' flag
+
             if parallel:
                 try:
                     import multiprocessing
+
                     # This logic is now correctly controlled by the 'parallel' parameter
                     multiprocessing.set_start_method("spawn", force=True)
-                    num_proc = min(multiprocessing.cpu_count(), 32, 1 + xyz.shape[0] // 10)
+                    num_proc = min(
+                        multiprocessing.cpu_count(), 32, 1 + xyz.shape[0] // 10
+                    )
                     subtraj_list = self._divide_into_subtraj(xyz, num_proc)
-                    self.logger.info(f"Using multiprocessing on CPU. Dividing into {num_proc} processes.")
-                    
+                    self.logger.info(
+                        f"Using multiprocessing on CPU. Dividing into {num_proc} processes."
+                    )
+
                     args_list = [(subtraj, mu, rc, p) for subtraj in subtraj_list]
                     hic = np.zeros((xyz.shape[1], xyz.shape[1]), dtype=np.float32)
 
                     with multiprocessing.Pool(processes=num_proc) as pool:
                         total_frames = xyz.shape[0]
                         results = pool.map(_wrap_calc, args_list)
-                        
+
                         for i, subtraj in enumerate(subtraj_list):
                             hic += results[i] * (subtraj.shape[0] / total_frames)
 
                     self.logger.info(f"Generated HiC matrix of shape: {hic.shape}")
 
                 except (ModuleNotFoundError, RuntimeError) as e:
-                    self.logger.warning(f"Multiprocessing failed with error: {e}. Falling back to serial computation.")
+                    self.logger.warning(
+                        f"Multiprocessing failed with error: {e}. Falling back to serial computation."
+                    )
                     serialize = True
-            
+
             if serialize:
                 self.logger.info("Computing HiC serially on CPU...")
                 hic = _calc_HiC_from_traj_array(xyz, mu, rc, p)
                 self.logger.info(f"Generated HiC matrix of shape: {hic.shape}")
-        
+
         return hic
 
     # =========================================================================
     # PBC Hi-C Generation (Fixed: GPU Summation & Precision)
     # =========================================================================
-    def gen_pbc_hic_from_cndb(self, traj_file, mu, rc, p=None, platform='CPU', parallel=True, skip_frames=1, batch_size=None):
+    def gen_pbc_hic_from_cndb(
+        self,
+        traj_file,
+        mu,
+        rc,
+        p=None,
+        platform="CPU",
+        parallel=True,
+        skip_frames=1,
+        batch_size=None,
+    ):
         """
         Generates a Hi-C matrix from a CNDB trajectory file using PBC (Minimum Image Convention)
         and a smooth probability function (Sigmoid/Power-law).
@@ -386,87 +412,106 @@ class HiCManager:
             from .cndb_tools import ChromatinTrajectory
         except ImportError:
             # Fallback: assume it's in the same package or user handles imports
-            self.logger.warning("Could not import ChromatinTrajectory from chromdyn_pbc.tools. Trying global scope.")
+            self.logger.warning(
+                "Could not import ChromatinTrajectory from chromdyn_pbc.tools. Trying global scope."
+            )
             # If ChromatinTrajectory is not imported, this will raise NameError, which is expected behavior
             # if the environment is not set up correctly.
 
         self.logger.info(f"Computing PBC Hi-C with mu={mu}, rc={rc}, p={p}...")
-        
+
         # 2. Load Data using Standard Class
         traj = ChromatinTrajectory(traj_file)
 
         # Get Coordinates: (N_frames, N_beads, 3)
         # traj.xyz handles the slicing internally via frames=[start, end, step]
         xyz = traj.xyz(frames=[0, None, skip_frames])
-        
+
         # Get Box Vectors: (N_frames, 3, 3)
         if traj.box_vectors is not None:
             # Slice the box vectors to match the skip_frames of coordinates
             boxes = traj.box_vectors[::skip_frames]
             # Safety check: if box is all zeros, replace with huge number to disable PBC
-            norms = np.linalg.norm(boxes, axis=(1,2))
+            norms = np.linalg.norm(boxes, axis=(1, 2))
             if np.any(norms < 1e-6):
-                self.logger.warning("Found frames with zero box vectors. Disabling PBC for those frames.")
+                self.logger.warning(
+                    "Found frames with zero box vectors. Disabling PBC for those frames."
+                )
                 boxes[norms < 1e-6] = np.eye(3) * 999999.9
         else:
             self.logger.warning("traj.box_vectors is None. Assuming infinite box.")
             # Create dummy huge boxes to effectively disable PBC
             boxes = np.tile(np.eye(3) * 999999.9, (xyz.shape[0], 1, 1))
-        
+
         # Close the trajectory file handle as we have loaded data into memory
         traj.close()
-        
-        self.logger.info(f"Trajectory shape: {xyz.shape}, Box data shape: {boxes.shape}")
+
+        self.logger.info(
+            f"Trajectory shape: {xyz.shape}, Box data shape: {boxes.shape}"
+        )
 
         # 3. Computation (Dispatch to CPU/GPU)
         hic = None
 
         # --- CUDA Platform ---
-        if platform.upper() == 'CUDA':
+        if platform.upper() == "CUDA":
             if CUPY_AVAILABLE and cp.cuda.runtime.getDeviceCount() > 0:
                 self.logger.info("Computing PBC HiC on GPU...")
-                hic = _calc_HiC_from_traj_array_gpu(xyz, mu, rc, p, boxes, batch_size=batch_size)
+                hic = _calc_HiC_from_traj_array_gpu(
+                    xyz, mu, rc, p, boxes, batch_size=batch_size
+                )
             else:
                 self.logger.warning("CUDA not available. Falling back to CPU.")
-                platform = 'CPU'
+                platform = "CPU"
 
         # --- CPU Platform ---
-        if platform.upper() == 'CPU':
+        if platform.upper() == "CPU":
             if parallel:
                 try:
                     import multiprocessing
+
                     multiprocessing.set_start_method("spawn", force=True)
-                    num_proc = min(multiprocessing.cpu_count(), 32, max(1, xyz.shape[0] // 10))
-                    
+                    num_proc = min(
+                        multiprocessing.cpu_count(), 32, max(1, xyz.shape[0] // 10)
+                    )
+
                     # Split both coordinates and boxes for multiprocessing
                     sub_xyz_list = self._divide_into_subtraj(xyz, num_proc)
                     sub_box_list = self._divide_into_subtraj(boxes, num_proc)
-                    
-                    self.logger.info(f"Using multiprocessing on CPU ({num_proc} processes).")
-                    
+
+                    self.logger.info(
+                        f"Using multiprocessing on CPU ({num_proc} processes)."
+                    )
+
                     # Pass mu, rc, p to workers
-                    args_list = [(sub_xyz_list[i], sub_box_list[i], mu, rc, p) for i in range(num_proc)]
-                    
+                    args_list = [
+                        (sub_xyz_list[i], sub_box_list[i], mu, rc, p)
+                        for i in range(num_proc)
+                    ]
+
                     hic = np.zeros((xyz.shape[1], xyz.shape[1]), dtype=np.float32)
-                    
+
                     with multiprocessing.Pool(processes=num_proc) as pool:
                         results = pool.map(_wrap_calc_pbc, args_list)
                         total_frames = xyz.shape[0]
                         for i, res in enumerate(results):
                             weight = sub_xyz_list[i].shape[0] / total_frames
                             hic += res * weight
-                            
+
                 except Exception as e:
-                    self.logger.warning(f"Multiprocessing failed: {e}. Falling back to serial.")
+                    self.logger.warning(
+                        f"Multiprocessing failed: {e}. Falling back to serial."
+                    )
                     parallel = False
-            
+
             if not parallel:
                 self.logger.info("Computing PBC HiC serially on CPU...")
                 hic = _calc_pbc_hic_cpu_serial(xyz, boxes, mu, rc, p)
-                
+
         self.logger.info(f"Generated PBC HiC matrix of shape: {hic.shape}")
         return hic
-        
+
+
 def _calc_prob(data, mu, rc, p=None):
     """
     Calculates a Hi-C like contact probability matrix from 3D coordinate data.
@@ -487,16 +532,14 @@ def _calc_prob(data, mu, rc, p=None):
         np.ndarray: An N x N symmetric matrix of contact probabilities.
     """
     # Compute condensed distance matrix (upper triangle of the distance matrix)
-    r = pdist(data, metric='euclidean')
-    
+    r = pdist(data, metric="euclidean")
+
     # Check if the power-law exponent 'p' is provided
     if p is not None:
         # If p is provided, use the original conditional logic
         # applying sigmoid for r <= rc and power-law for r > rc.
         f_condensed = np.where(
-            r <= rc,
-            0.5 * (1 + np.tanh(mu * (rc - r))),
-            0.5 * (rc / r) ** p
+            r <= rc, 0.5 * (1 + np.tanh(mu * (rc - r))), 0.5 * (rc / r) ** p
         )
     else:
         # If p is None, apply only the sigmoid-like function to all distances.
@@ -514,26 +557,26 @@ def _calc_HiC_from_traj_array_gpu(traj, mu, rc, p=None, boxes=None, batch_size=N
     Handles both PBC (if boxes provided) and Non-PBC (if boxes is None).
     Uses 'Loop inside Batch' strategy to prevent OOM errors on large systems.
     """
-    # Use float32 for storage/computation to save memory. 
+    # Use float32 for storage/computation to save memory.
     # If precision artifacts appear (white stripes), change to cp.float64.
-    dtype_gpu = cp.float32 
-    
+    dtype_gpu = cp.float32
+
     traj_cp = cp.array(traj, dtype=dtype_gpu)
     n_frames, n_beads, _ = traj_cp.shape
-    
+
     # --- 1. PBC Setup ---
     use_pbc = False
     boxes_diag_cp = None
-    
+
     if boxes is not None:
         # Extract diagonals: (N_frames, 3)
         boxes_diag = np.array([np.diag(b) for b in boxes])
-        
+
         # Check if they are dummy boxes (huge values)
         if np.min(boxes_diag) < 1e5:
             use_pbc = True
             boxes_diag_cp = cp.array(boxes_diag, dtype=dtype_gpu)
-    
+
     if batch_size is None:
         batch_size = n_frames
 
@@ -542,76 +585,77 @@ def _calc_HiC_from_traj_array_gpu(traj, mu, rc, p=None, boxes=None, batch_size=N
     # --- 2. Computation Loop ---
     for i in range(0, n_frames, batch_size):
         end = min(i + batch_size, n_frames)
-        
+
         # Slice Batch
-        batch_pos = traj_cp[i:end] # (B, N, 3)
-        
+        batch_pos = traj_cp[i:end]  # (B, N, 3)
+
         if use_pbc:
-            batch_box = boxes_diag_cp[i:end] # (B, 3)
-        
+            batch_box = boxes_diag_cp[i:end]  # (B, 3)
+
         # Loop inside batch to keep memory usage O(N^2) instead of O(B * N^2)
         # This is the safe strategy from your old function.
         for j in range(batch_pos.shape[0]):
-            pos = batch_pos[j] # (N, 3)
-            
+            pos = batch_pos[j]  # (N, 3)
+
             # A. Calculate Difference
             diff = pos[:, cp.newaxis, :] - pos[cp.newaxis, :, :]
-            
+
             # B. Apply PBC (MIC) if needed
             if use_pbc:
-                box = batch_box[j] # (3,)
+                box = batch_box[j]  # (3,)
                 # MIC: diff - box * round(diff/box)
                 diff -= box * cp.round(diff / box)
-            
+
             # C. Distance
             r = cp.linalg.norm(diff, axis=-1)
-            
+
             # D. Probability Function
             if p is not None:
                 # Add epsilon to prevent div by zero
                 term_power = 0.5 * (rc / (r + 1e-10)) ** p
-                
-                prob = cp.where(
-                    r <= rc,
-                    0.5 * (1 + cp.tanh(mu * (rc - r))),
-                    term_power
-                )
+
+                prob = cp.where(r <= rc, 0.5 * (1 + cp.tanh(mu * (rc - r))), term_power)
             else:
                 prob = 0.5 * (1 + cp.tanh(mu * (rc - r)))
-            
+
             # Zero out diagonal explicitly (self-contact)
             # This cleans up any artifacts at r=0
             prob[cp.arange(n_beads), cp.arange(n_beads)] = 0.0
-            
+
             # Accumulate
             cumulative_prob += prob
 
     # 3. Average
     hic_matrix = cumulative_prob / n_frames
-    
+
     return cp.asnumpy(hic_matrix)
+
 
 # Function to wrap single-call processing (needed for Pool.map)
 def _wrap_calc(subtraj_mu_rc_p):
     subtraj, mu, rc, p = subtraj_mu_rc_p
     return _calc_HiC_from_traj_array(subtraj, mu, rc, p).astype(np.float32)
 
+
 def _wrap_calc_pbc(args):
     sub_xyz, sub_box, mu, rc, p = args
     return _calc_pbc_hic_cpu_serial(sub_xyz, sub_box, mu, rc, p)
 
+
 def _calc_HiC_from_traj_array(traj, mu, rc, p):
     # print('Computing probability of contact versus contour distance')
-    pol_size=traj.shape[1]
+    pol_size = traj.shape[1]
     Prob = np.zeros((pol_size, pol_size))
     for ii, snapshot in enumerate(traj):
         Prob += _calc_prob(snapshot, mu, rc, p)
-    Prob=Prob/(ii+1)
+    Prob = Prob / (ii + 1)
     return Prob
+
 
 # =============================================================================
 # Helper Functions (Fixed Precision and Logic)
 # =============================================================================
+
 
 def _mic_distance(pos, box):
     """
@@ -622,40 +666,38 @@ def _mic_distance(pos, box):
     pos = pos.astype(np.float64)
     box = box.astype(np.float64)
     L = np.diag(box)
-    
+
     diff = pos[:, np.newaxis, :] - pos[np.newaxis, :, :]
-    
+
     # MIC correction
     # diff / L can be sensitive if L is small and diff is large
     diff -= L * np.round(diff / L)
-    
+
     return np.linalg.norm(diff, axis=-1)
+
 
 def _calc_pbc_hic_cpu_serial(traj, boxes, mu, rc, p):
     n_beads = traj.shape[1]
-    total_prob = np.zeros((n_beads, n_beads), dtype=np.float64) # Accumulate in double
-    
+    total_prob = np.zeros((n_beads, n_beads), dtype=np.float64)  # Accumulate in double
+
     for i in range(traj.shape[0]):
         # 1. Calculate Distance with PBC
         r = _mic_distance(traj[i], boxes[i])
-        
+
         if p is not None:
             # Safe division for power law
-            with np.errstate(divide='ignore', invalid='ignore'):
+            with np.errstate(divide="ignore", invalid="ignore"):
                 term_power = 0.5 * (rc / r) ** p
-            term_power[r == 0] = 0.0 # Fix diagonal
-            
-            prob = np.where(
-                r <= rc, 
-                0.5 * (1 + np.tanh(mu * (rc - r))), 
-                term_power
-            )
+            term_power[r == 0] = 0.0  # Fix diagonal
+
+            prob = np.where(r <= rc, 0.5 * (1 + np.tanh(mu * (rc - r))), term_power)
         else:
             prob = 0.5 * (1 + np.tanh(mu * (rc - r)))
-            
+
         total_prob += prob
-        
+
     return (total_prob / traj.shape[0]).astype(np.float32)
+
 
 # already implemented in _calc_HiC_from_traj_array_gpu
 r'''def _calc_pbc_hic_gpu(traj, boxes, mu, rc, p=None, batch_size=None):
@@ -705,7 +747,6 @@ r'''def _calc_pbc_hic_gpu(traj, boxes, mu, rc, p=None, batch_size=None):
             
     hic_matrix = cumulative_prob / n_frames
     return cp.asnumpy(hic_matrix)'''
-
 
 
 # def _calc_prob(data, mu, rc, p):

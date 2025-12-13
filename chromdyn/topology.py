@@ -169,19 +169,20 @@ class TopologyData:
     Helper class to access topology data via attributes.
     Parses the nested JSON dictionary into flat statistics.
     """
+
     def __init__(self, data_dict):
         # Raw data
         self.chains = data_dict.get("chains", [])
         self.bonds = data_dict.get("bonds", [])
-        
+
         # --- Pre-calculated Statistics (What you asked for) ---
-        
+
         # 1. Number of Chains
         self.n_chains = len(self.chains)
-        
+
         # 2. Number of Bonds
         self.n_bonds = len(self.bonds)
-        
+
         # 3. Total Number of Atoms (Beads)
         self.n_atoms = 0
         self._calculate_atoms()
@@ -190,8 +191,8 @@ class TopologyData:
         """Internal helper to count atoms."""
         count = 0
         for chain in self.chains:
-            for residue in chain['residues']:
-                count += len(residue['atoms'])
+            for residue in chain["residues"]:
+                count += len(residue["atoms"])
         self.n_atoms = count
 
     @property
@@ -203,10 +204,12 @@ class TopologyData:
         info = []
         for chain in self.chains:
             # Count atoms in this chain
-            n_atoms_in_chain = sum(len(res['atoms']) for res in chain['residues'])
-            info.append((chain['id'], n_atoms_in_chain))
+            n_atoms_in_chain = sum(len(res["atoms"]) for res in chain["residues"])
+            info.append((chain["id"], n_atoms_in_chain))
         return info
 
     def __repr__(self):
-            return (f"<TopologyData: {self.n_chains} chains, "
-                    f"{self.n_atoms} beads, {self.n_bonds} bonds>")
+        return (
+            f"<TopologyData: {self.n_chains} chains, "
+            f"{self.n_atoms} beads, {self.n_bonds} bonds>"
+        )

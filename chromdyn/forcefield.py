@@ -51,38 +51,40 @@ class ForceFieldManager:
         """Update nonbonded method for this manager and all existing CustomNonbondedForce objects.
         method ∈ {'NonPeriodic','Periodic'}.
         """
-        from openmm import CustomNonbondedForce, NonbondedForce
+        from openmm import CustomNonbondedForce
 
         self.Nonbonded_method = (
             CustomNonbondedForce.CutoffNonPeriodic
-            if method == 'NonPeriodic'
+            if method == "NonPeriodic"
             else CustomNonbondedForce.CutoffPeriodic
         )
 
-        if method == 'Periodic':
-            target_method_custom = CustomNonbondedForce.CutoffPeriodic
-            target_method_standard = NonbondedForce.CutoffPeriodic
+        if method == "Periodic":
             # get box vector
             box_vectors = self.system.getDefaultPeriodicBoxVectors()
-            if box_vectors[0].x == 0 and box_vectors[1].y == 0 and box_vectors[2].z == 0:
-                self.logger.warning("PBC requested but DefaultPeriodicBoxVectors are zero! PBC will likely fail.")
-                min_box_dim = 99999.9 # avoid division by zero, but OpenMM will still throw an error
+            if (
+                box_vectors[0].x == 0
+                and box_vectors[1].y == 0
+                and box_vectors[2].z == 0
+            ):
+                self.logger.warning(
+                    "PBC requested but DefaultPeriodicBoxVectors are zero! PBC will likely fail."
+                )
+                min_box_dim = 99999.9  # avoid division by zero, but OpenMM will still throw an error
             else:
                 lengths = [box_vectors[0].x, box_vectors[1].y, box_vectors[2].z]
                 min_box_dim = min(lengths)
-            
+
             # check cutoff
             if self.Nonbonded_cutoff > min_box_dim / 2.0:
-                new_cutoff = min_box_dim / 2.0 - 0.01  # slightly adjust in case of float error
+                new_cutoff = (
+                    min_box_dim / 2.0 - 0.01
+                )  # slightly adjust in case of float error
                 self.logger.warning(
                     f"Requested cutoff {self.Nonbonded_cutoff} nm is too large for "
                     f"box dimension {min_box_dim} nm. Clamping cutoff to {new_cutoff:.4f} nm."
                 )
                 self.Nonbonded_cutoff = new_cutoff
-        else:
-            target_method_custom = CustomNonbondedForce.CutoffNonPeriodic
-            target_method_standard = NonbondedForce.CutoffNonPeriodic
-
 
         for name, force in self.forceDict.items():
             if force.__class__.__name__ == "CustomNonbondedForce":

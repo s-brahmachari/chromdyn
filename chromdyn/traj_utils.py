@@ -8,24 +8,30 @@
 
 from __future__ import annotations
 from multiprocessing import Pool, cpu_count
-from typing import Dict, Tuple, Union, List, Optional
+from typing import Dict, Union, List, Optional
 from pathlib import Path
 import numpy as np
 import h5py
-import os   
+import os
 import openmm.unit as unit
 import warnings
+
 # for topology
 from .topology import TopologyData
 import json
+
 # for GPU acceleration
 try:
     import cupy as cp
+
     CUPY_AVAILABLE = True
 except ImportError:
-    warnings.warn("Cupy not found. GPU acceleration will not be available. Calculations will be on CPU")
+    warnings.warn(
+        "Cupy not found. GPU acceleration will not be available. Calculations will be on CPU"
+    )
     CUPY_AVAILABLE = False
     cp = None
+
 
 class Analyzer:
     """
@@ -168,12 +174,12 @@ class Analyzer:
     def compute_RG_type(traj):
         """
         Function to compute Radius of Gyration (Rg) classified by particle type.
-        
+
         Parameters:
             traj: Trajectory object, which must contain the following attributes:
                 - traj.xyz: Coordinate array with shape (T, N, 3)
                 - traj.ChromSeq: A list or array of length N, containing bead types (e.g., 'A', 'B')
-                
+
         Returns:
             results (dict): A dictionary containing Rg data.
                             key: 'general' and each type name (e.g., 'A', 'B')
@@ -184,37 +190,37 @@ class Analyzer:
         all_positions = np.asarray(traj.xyz(frames=[0, None, 1], beadSelection=None))
         # Ensure ChromSeq is numpy array for boolean indexing
         bead_types = np.asarray(traj.ChromSeq)
-        
+
         # 2. Initialize result dictionary
         results = {}
-        
+
         # 3. Calculate 'general' Rg (all beads)
         # Always calculate this
-        results['general'] = Analyzer.compute_RG(all_positions)
-        
+        results["general"] = Analyzer.compute_RG(all_positions)
+
         # 4. Check if system is Homogeneous (Homogeneous)
         # np.unique returns sorted unique type list
         unique_types = np.unique(bead_types)
-        
+
         # If type count is greater than 1, it's a Heterogeneous (Heterogeneous) system, need to calculate by type
         if len(unique_types) > 1:
             for t_type in unique_types:
                 # Create boolean mask (Boolean Mask)
                 # mask length equals beads count, True means current type
-                mask = (bead_types == t_type)
-                
+                mask = bead_types == t_type
+
                 # Slice
                 # Dimension meaning: [all frames, mask filtered column(beads), all coordinates]
                 subset_positions = all_positions[:, mask, :]
-                
+
                 # Ensure type name is string format as key
                 key_name = str(t_type)
-                
+
                 # Calculate Rg for this type and store in dictionary
                 results[key_name] = Analyzer.compute_RG(subset_positions)
-                
+
         # If len(unique_types) == 1, loop is skipped, only returns general, avoid duplicate calculation
-                
+
         return results
 
     # =========================================================================
@@ -222,13 +228,14 @@ class Analyzer:
     # =========================================================================
     @staticmethod
     def calculate_vacf(
-                       velocities: np.ndarray, 
-                       bead_types: np.ndarray, 
-                       sampling_step: int = 1,
-                       platform: str = 'auto') -> Dict[str, np.ndarray]:
+        velocities: np.ndarray,
+        bead_types: np.ndarray,
+        sampling_step: int = 1,
+        platform: str = "auto",
+    ) -> Dict[str, np.ndarray]:
         """
         Calculate Velocity Autocorrelation Function (VACF).
-        
+
         Parameters
         ----------
         velocities : np.ndarray
@@ -238,9 +245,9 @@ class Analyzer:
         sampling_step : int
             Step size for sampling frames.
         platform : str
-            'auto', 'CPU', or 'CUDA'. 
+            'auto', 'CPU', or 'CUDA'.
             'auto' will use GPU if available, else CPU.
-            
+
         Returns
         -------
         Dict[str, np.ndarray]
@@ -259,16 +266,17 @@ class Analyzer:
     # =========================================================================
     @staticmethod
     def calculate_spatial_vel_corr(
-                                   coords: np.ndarray,
-                                   velocities: np.ndarray,
-                                   bead_types: np.ndarray,
-                                   dist_range: float,
-                                   sampling_step: int = 1,
-                                   num_bins: int = 100,
-                                   platform: str = 'auto') -> Dict[str, np.ndarray]:
+        coords: np.ndarray,
+        velocities: np.ndarray,
+        bead_types: np.ndarray,
+        dist_range: float,
+        sampling_step: int = 1,
+        num_bins: int = 100,
+        platform: str = "auto",
+    ) -> Dict[str, np.ndarray]:
         """
         Calculate spatial velocity correlation C(r) = <v_i . v_j>.
-        
+
         Parameters
         ----------
         coords : np.ndarray
@@ -292,13 +300,15 @@ class Analyzer:
             Correlation curves and 'bin_centers'.
         """
         use_gpu = Analyzer._check_platform(platform)
-        
+
         if use_gpu:
-            return Analyzer._calculate_spatial_vel_corr_gpu(coords, velocities, bead_types, 
-                                                        dist_range, sampling_step, num_bins)
+            return Analyzer._calculate_spatial_vel_corr_gpu(
+                coords, velocities, bead_types, dist_range, sampling_step, num_bins
+            )
         else:
-            return Analyzer._calculate_spatial_vel_corr_cpu(coords, velocities, bead_types, 
-                                                        dist_range, sampling_step, num_bins)
+            return Analyzer._calculate_spatial_vel_corr_cpu(
+                coords, velocities, bead_types, dist_range, sampling_step, num_bins
+            )
 
     # =========================================================================
     # Helper: Platform Check
@@ -306,14 +316,16 @@ class Analyzer:
     @staticmethod
     def _check_platform(platform: str) -> bool:
         """Returns True if GPU should be used, False otherwise."""
-        if platform.upper() == 'CUDA' or platform.upper() == 'GPU':
+        if platform.upper() == "CUDA" or platform.upper() == "GPU":
             if not CUPY_AVAILABLE:
-                warnings.warn("CUDA requested but CuPy not installed. Falling back to CPU.")
+                warnings.warn(
+                    "CUDA requested but CuPy not installed. Falling back to CPU."
+                )
                 return False
             return True
-        elif platform.upper() == 'CPU':
+        elif platform.upper() == "CPU":
             return False
-        else: # 'auto'
+        else:  # 'auto'
             if CUPY_AVAILABLE:
                 try:
                     if cp.cuda.runtime.getDeviceCount() > 0:
@@ -327,13 +339,13 @@ class Analyzer:
     # =========================================================================
 
     @staticmethod
-    def _autocorrFFT_gpu(x_multi_dim: 'cp.ndarray') -> 'cp.ndarray':
+    def _autocorrFFT_gpu(x_multi_dim: "cp.ndarray") -> "cp.ndarray":
         """(GPU) FFT-based autocorrelation helper."""
         N = x_multi_dim.shape[0]
-        F = cp.fft.fft(x_multi_dim, n=2*N, axis=0)
+        F = cp.fft.fft(x_multi_dim, n=2 * N, axis=0)
         res = cp.fft.ifft(F * F.conjugate(), axis=0)
         res = res[:N, ...].real
-        
+
         norm_shape = [N] + [1] * (x_multi_dim.ndim - 1)
         norm = (N - cp.arange(0, N)).reshape(norm_shape)
         return res / norm
@@ -342,26 +354,28 @@ class Analyzer:
     def _calculate_vacf_gpu(velocities, bead_types, sampling_step):
         """(GPU) Implementation of VACF."""
         print("Calculating VACF on GPU...")
-        type_indices = {utype: np.where(bead_types == utype)[0] for utype in np.unique(bead_types)}
-        
+        type_indices = {
+            utype: np.where(bead_types == utype)[0] for utype in np.unique(bead_types)
+        }
+
         # Transfer to GPU
         sampled_vels_cp = cp.asarray(velocities[::sampling_step])
-        
+
         # FFT Autocorrelation
         vacf_components_cp = Analyzer._autocorrFFT_gpu(sampled_vels_cp)
-        
+
         # Sum components (x+y+z) -> (Time, Beads) -> Transpose to (Beads, Time)
         vacf_all_beads_cp = cp.sum(vacf_components_cp, axis=2).T
-        
+
         results_cp = {}
-        results_cp['general'] = cp.mean(vacf_all_beads_cp, axis=0)
-        
+        results_cp["general"] = cp.mean(vacf_all_beads_cp, axis=0)
+
         # Transfer indices for slicing
         for btype, indices in type_indices.items():
             if len(indices) > 0:
                 indices_cp = cp.asarray(indices)
                 results_cp[btype] = cp.mean(vacf_all_beads_cp[indices_cp, :], axis=0)
-        
+
         # Transfer back
         return {k: cp.asnumpy(v) for k, v in results_cp.items()}
 
@@ -374,10 +388,10 @@ class Analyzer:
         """(CPU) FFT-based autocorrelation helper using NumPy."""
         N = x_multi_dim.shape[0]
         # Use numpy.fft
-        F = np.fft.fft(x_multi_dim, n=2*N, axis=0)
+        F = np.fft.fft(x_multi_dim, n=2 * N, axis=0)
         res = np.fft.ifft(F * F.conjugate(), axis=0)
         res = res[:N, ...].real
-        
+
         norm_shape = [N] + [1] * (x_multi_dim.ndim - 1)
         norm = (N - np.arange(0, N)).reshape(norm_shape)
         return res / norm
@@ -386,23 +400,25 @@ class Analyzer:
     def _calculate_vacf_cpu(velocities, bead_types, sampling_step):
         """(CPU) Implementation of VACF using NumPy."""
         print("Calculating VACF on CPU...")
-        type_indices = {utype: np.where(bead_types == utype)[0] for utype in np.unique(bead_types)}
-        
+        type_indices = {
+            utype: np.where(bead_types == utype)[0] for utype in np.unique(bead_types)
+        }
+
         sampled_vels = velocities[::sampling_step]
-        
+
         # FFT Autocorrelation
         vacf_components = Analyzer._autocorrFFT_cpu(sampled_vels)
-        
+
         # Sum components
         vacf_all_beads = np.sum(vacf_components, axis=2).T
-        
+
         results = {}
-        results['general'] = np.mean(vacf_all_beads, axis=0)
-        
+        results["general"] = np.mean(vacf_all_beads, axis=0)
+
         for btype, indices in type_indices.items():
             if len(indices) > 0:
                 results[btype] = np.mean(vacf_all_beads[indices, :], axis=0)
-                
+
         return results
 
     # =========================================================================
@@ -415,116 +431,128 @@ class Analyzer:
         bead_types: np.ndarray,
         dist_range: float,
         sampling_step: int = 1,
-        num_bins: int = 50
+        num_bins: int = 50,
     ) -> Dict[str, np.ndarray]:
         """
         (Vectorized, GPU) calculate spatial velocity correlation C(r) = <v_i · v_j>.
-        
+
         In CPU, loop over frames, but calculate all O(N^2) on GPU.
         """
         print("Calculating Spatial Correlation on GPU...")
         n_frames, n_beads, _ = coords.shape
-        
+
         # 1. set Bins and type pairs (lightweight on CPU)
         bins = np.linspace(0, dist_range, num_bins + 1, dtype=np.float32)
         bin_centers = (bins[:-1] + bins[1:]) / 2.0
-        
+
         unique_types = np.unique(bead_types)
-        type_pairs = ["-".join(sorted(pair)) for pair in np.array(np.meshgrid(unique_types, unique_types)).T.reshape(-1, 2)]
+        type_pairs = [
+            "-".join(sorted(pair))
+            for pair in np.array(np.meshgrid(unique_types, unique_types)).T.reshape(
+                -1, 2
+            )
+        ]
         type_pairs = sorted(list(set(type_pairs)))
-        
+
         # --- 2. RATIONALE: pre-calculate masks and *once* transfer to GPU ---
         rows, cols = np.triu_indices(n_beads, k=1)
         rows_cp = cp.asarray(rows)
         cols_cp = cp.asarray(cols)
-        
+
         bead_types_i = bead_types[rows]
         bead_types_j = bead_types[cols]
-        
+
         pair_masks_cp = {}
         for key in type_pairs:
-            t1, t2 = key.split('-')
+            t1, t2 = key.split("-")
             if t1 == t2:
                 mask = (bead_types_i == t1) & (bead_types_j == t2)
             else:
-                mask = ((bead_types_i == t1) & (bead_types_j == t2)) | \
-                    ((bead_types_i == t2) & (bead_types_j == t1))
+                mask = ((bead_types_i == t1) & (bead_types_j == t2)) | (
+                    (bead_types_i == t2) & (bead_types_j == t1)
+                )
             pair_masks_cp[key] = cp.asarray(mask)
 
         bins_cp = cp.asarray(bins)
 
         # 3. RATIONALE: initialize accumulators on GPU
-        total_corr_cp = {key: cp.zeros(num_bins) for key in ['general'] + type_pairs}
-        counts_cp = {key: cp.zeros(num_bins) for key in ['general'] + type_pairs}
+        total_corr_cp = {key: cp.zeros(num_bins) for key in ["general"] + type_pairs}
+        counts_cp = {key: cp.zeros(num_bins) for key in ["general"] + type_pairs}
 
         # 4. loop over sampled frames on CPU
         for frame_idx in range(0, n_frames, sampling_step):
-            
+
             # 5. RATIONALE: transfer *only the current frame* to GPU
             frame_coords_cp = cp.asarray(coords[frame_idx], dtype=cp.float32)
             frame_vels_cp = cp.asarray(velocities[frame_idx], dtype=cp.float32)
-            
+
             # 6. RATIONALE: execute all O(N^2) calculations on GPU
-            
+
             # a. distance matrix: use broadcast (N, 1, 3) - (1, N, 3) -> (N, N, 3) -> (N, N)
-            dist_matrix_cp = cp.linalg.norm(frame_coords_cp[:, None, :] - frame_coords_cp[None, :, :], axis=2)
-            
+            dist_matrix_cp = cp.linalg.norm(
+                frame_coords_cp[:, None, :] - frame_coords_cp[None, :, :], axis=2
+            )
+
             # b. dot product matrix: (N, 3) @ (3, N) -> (N, N)
             v_dot_v_cp = frame_vels_cp @ frame_vels_cp.T
-            
+
             # c. extract upper triangle
             all_dists_cp = dist_matrix_cp[rows_cp, cols_cp]
             all_dots_cp = v_dot_v_cp[rows_cp, cols_cp]
-            
+
             # d. digitize
             all_bin_indices_cp = cp.digitize(all_dists_cp, bins_cp[1:])
-            
+
             # 7. RATIONALE: use bincount on GPU for vectorized accumulation
-            valid_mask_cp = (all_bin_indices_cp < num_bins)
-            
+            valid_mask_cp = all_bin_indices_cp < num_bins
+
             # accumulate 'general'
             valid_bins_cp = all_bin_indices_cp[valid_mask_cp]
             valid_dots_cp = all_dots_cp[valid_mask_cp]
-            total_corr_cp['general'] += cp.bincount(valid_bins_cp, weights=valid_dots_cp, minlength=num_bins)
-            counts_cp['general'] += cp.bincount(valid_bins_cp, minlength=num_bins)
-            
+            total_corr_cp["general"] += cp.bincount(
+                valid_bins_cp, weights=valid_dots_cp, minlength=num_bins
+            )
+            counts_cp["general"] += cp.bincount(valid_bins_cp, minlength=num_bins)
+
             # accumulate by type
             for key, type_mask_cp in pair_masks_cp.items():
                 final_mask_cp = valid_mask_cp & type_mask_cp
                 if cp.any(final_mask_cp):
                     type_bins_cp = all_bin_indices_cp[final_mask_cp]
                     type_dots_cp = all_dots_cp[final_mask_cp]
-                    total_corr_cp[key] += cp.bincount(type_bins_cp, weights=type_dots_cp, minlength=num_bins)
+                    total_corr_cp[key] += cp.bincount(
+                        type_bins_cp, weights=type_dots_cp, minlength=num_bins
+                    )
                     counts_cp[key] += cp.bincount(type_bins_cp, minlength=num_bins)
 
         # 8. calculate final average on GPU
         results_cp = {}
         for key in total_corr_cp:
-            
+
             # replace where to be compatible with old version of cupy
 
             # 1. copy counts to avoid modifying original accumulators
             counts_safe_cp = counts_cp[key].copy()
-            
+
             # 2. create mask for all bins with count 0
-            zero_mask_cp = (counts_safe_cp == 0)
-            
+            zero_mask_cp = counts_safe_cp == 0
+
             # 3. replace these 0s with 1.0. This doesn't affect the result,
             #    because we will set these positions to NaN later.
-            counts_safe_cp[zero_mask_cp] = 1.0 
-            
+            counts_safe_cp[zero_mask_cp] = 1.0
+
             # 4. perform regular division (now safe)
             corr_cp = total_corr_cp[key] / counts_safe_cp
-            
+
             # 5. set positions marked as 0 to NaN
             corr_cp[zero_mask_cp] = cp.nan
-            
+
             results_cp[key] = corr_cp
-                
+
         # 9. transfer final small result array back to CPU
         results_np = {k: cp.asnumpy(v) for k, v in results_cp.items()}
-        results_np['bin_centers'] = bin_centers
-                
+        results_np["bin_centers"] = bin_centers
+
         return results_np
 
     # =========================================================================
@@ -532,90 +560,111 @@ class Analyzer:
     # =========================================================================
 
     @staticmethod
-    def _calculate_spatial_vel_corr_cpu(coords, velocities, bead_types, 
-                                        dist_range, sampling_step, num_bins):
+    def _calculate_spatial_vel_corr_cpu(
+        coords, velocities, bead_types, dist_range, sampling_step, num_bins
+    ):
         """(CPU) Vectorized spatial velocity correlation using NumPy."""
         print("Calculating Spatial Velocity Correlation on CPU...")
-        
+
         n_frames, n_beads, _ = coords.shape
         bins = np.linspace(0, dist_range, num_bins + 1, dtype=np.float32)
         bin_centers = (bins[:-1] + bins[1:]) / 2.0
-        
+
         unique_types = np.unique(bead_types)
-        type_pairs = sorted(list(set(["-".join(sorted(pair)) for pair in np.array(np.meshgrid(unique_types, unique_types)).T.reshape(-1, 2)])))
-        
+        type_pairs = sorted(
+            list(
+                set(
+                    [
+                        "-".join(sorted(pair))
+                        for pair in np.array(
+                            np.meshgrid(unique_types, unique_types)
+                        ).T.reshape(-1, 2)
+                    ]
+                )
+            )
+        )
+
         # Pre-calc indices (CPU is efficient with indexing)
         rows, cols = np.triu_indices(n_beads, k=1)
-        
+
         bead_types_i = bead_types[rows]
         bead_types_j = bead_types[cols]
-        
+
         pair_masks = {}
         for key in type_pairs:
-            t1, t2 = key.split('-')
+            t1, t2 = key.split("-")
             if t1 == t2:
                 mask = (bead_types_i == t1) & (bead_types_j == t2)
             else:
-                mask = ((bead_types_i == t1) & (bead_types_j == t2)) | ((bead_types_i == t2) & (bead_types_j == t1))
+                mask = ((bead_types_i == t1) & (bead_types_j == t2)) | (
+                    (bead_types_i == t2) & (bead_types_j == t1)
+                )
             pair_masks[key] = mask
-            
-        total_corr = {key: np.zeros(num_bins) for key in ['general'] + type_pairs}
-        counts = {key: np.zeros(num_bins) for key in ['general'] + type_pairs}
-        
+
+        total_corr = {key: np.zeros(num_bins) for key in ["general"] + type_pairs}
+        counts = {key: np.zeros(num_bins) for key in ["general"] + type_pairs}
+
         # Loop over frames (Vectorized inside frame)
         for frame_idx in range(0, n_frames, sampling_step):
-            frame_coords = coords[frame_idx] # (N, 3)
-            frame_vels = velocities[frame_idx] # (N, 3)
-            
+            frame_coords = coords[frame_idx]  # (N, 3)
+            frame_vels = velocities[frame_idx]  # (N, 3)
+
             # a. Distance Matrix (Broadcasting)
-            # Warning: For very large N (>5000), this creates a large N*N matrix. 
+            # Warning: For very large N (>5000), this creates a large N*N matrix.
             # CPU RAM is usually sufficient, but be aware.
-            dist_matrix = np.linalg.norm(frame_coords[:, None, :] - frame_coords[None, :, :], axis=2)
-            
+            dist_matrix = np.linalg.norm(
+                frame_coords[:, None, :] - frame_coords[None, :, :], axis=2
+            )
+
             # b. Dot Product
             v_dot_v = frame_vels @ frame_vels.T
-            
+
             # c. Extract upper triangle
             all_dists = dist_matrix[rows, cols]
             all_dots = v_dot_v[rows, cols]
-            
+
             # d. Digitize
             all_bin_indices = np.digitize(all_dists, bins[1:])
-            
+
             # e. Accumulate (using np.bincount)
-            valid_mask = (all_bin_indices < num_bins)
-            
+            valid_mask = all_bin_indices < num_bins
+
             # General
             valid_bins = all_bin_indices[valid_mask]
             valid_dots = all_dots[valid_mask]
-            
+
             if valid_bins.size > 0:
-                total_corr['general'] += np.bincount(valid_bins, weights=valid_dots, minlength=num_bins)
-                counts['general'] += np.bincount(valid_bins, minlength=num_bins)
-            
+                total_corr["general"] += np.bincount(
+                    valid_bins, weights=valid_dots, minlength=num_bins
+                )
+                counts["general"] += np.bincount(valid_bins, minlength=num_bins)
+
             # By Type
             for key, type_mask in pair_masks.items():
                 final_mask = valid_mask & type_mask
                 if np.any(final_mask):
                     type_bins = all_bin_indices[final_mask]
                     type_dots = all_dots[final_mask]
-                    total_corr[key] += np.bincount(type_bins, weights=type_dots, minlength=num_bins)
+                    total_corr[key] += np.bincount(
+                        type_bins, weights=type_dots, minlength=num_bins
+                    )
                     counts[key] += np.bincount(type_bins, minlength=num_bins)
-        
+
         # Final Average
         results = {}
         for key in total_corr:
             counts_safe = counts[key].copy()
             # Safe division for CPU (avoiding runtime warnings)
-            with np.errstate(divide='ignore', invalid='ignore'):
+            with np.errstate(divide="ignore", invalid="ignore"):
                 corr = total_corr[key] / counts_safe
-            
+
             # Set 0 counts to NaN
             corr[counts_safe == 0] = np.nan
             results[key] = corr
-            
-        results['bin_centers'] = bin_centers
+
+        results["bin_centers"] = bin_centers
         return results
+
 
 class TrajectoryLoader:
     """
@@ -651,8 +700,6 @@ class TrajectoryLoader:
         return np.array(pos)
 
 
-        
-
 class ChromatinTrajectory:
     def __init__(self, filename: str = None):
         # initialize attributes
@@ -677,7 +724,7 @@ class ChromatinTrajectory:
     def xyz(self, frames=[0, None, 1], beadSelection=None, XYZ=[0, 1, 2]):
         """call external get_xyz function"""
         return get_xyz(self, frames, beadSelection, XYZ)
-    
+
     def close(self):
         """call external close_trajectory function"""
         close_trajectory(self)
@@ -686,8 +733,10 @@ class ChromatinTrajectory:
         """destruct the object and try to close the file"""
         self.close()
 
+
 # For using as independent functions
 # self should be the object of the class ChromatinTrajectory
+
 
 def load_trajectory(self, filename):
     R"""
@@ -697,11 +746,11 @@ def load_trajectory(self, filename):
     if not os.path.exists(filename):
         raise FileNotFoundError(f"File not found: {filename}")
 
-    self.cndb = h5py.File(filename, 'r')
+    self.cndb = h5py.File(filename, "r")
 
     frame_keys = sorted([k for k in self.cndb.keys() if k.isdigit()], key=int)
     self.Nframes = len(frame_keys)
-    
+
     if self.Nframes == 0:
         print("Warning: No frames found in file.")
         return self
@@ -709,49 +758,59 @@ def load_trajectory(self, filename):
     # --- 1. Load Bead Number ---
     first_frame_data = self.cndb[frame_keys[0]]
     self.Nbeads = first_frame_data.shape[0]
-    
+
     # --- 2. Load Types ---
-    if 'types' in self.cndb:
-        raw_types = self.cndb['types']
-        self.ChromSeq = [t.decode('utf-8') if isinstance(t, bytes) else t for t in raw_types]
+    if "types" in self.cndb:
+        raw_types = self.cndb["types"]
+        self.ChromSeq = [
+            t.decode("utf-8") if isinstance(t, bytes) else t for t in raw_types
+        ]
     else:
         print("  Warning: 'types' dataset not found. Assuming uniform bead types.")
         first_key = next(iter(self.cndb.keys()))
         n_beads = self.cndb[first_key].shape[0]
-        self.ChromSeq = ['U'] * n_beads
+        self.ChromSeq = ["U"] * n_beads
 
     self.uniqueChromSeq = set(self.ChromSeq)
-    self.dictChromSeq = {tt: [i for i, e in enumerate(self.ChromSeq) if e == tt] for tt in self.uniqueChromSeq}
+    self.dictChromSeq = {
+        tt: [i for i, e in enumerate(self.ChromSeq) if e == tt]
+        for tt in self.uniqueChromSeq
+    }
 
     # --- 3. Load Topology JSON---
     self.topology = None
-    if 'topology_json' in self.cndb:
+    if "topology_json" in self.cndb:
         try:
-            json_str = self.cndb['topology_json'][0]
-            if isinstance(json_str, bytes): json_str = json_str.decode('utf-8')
+            json_str = self.cndb["topology_json"][0]
+            if isinstance(json_str, bytes):
+                json_str = json_str.decode("utf-8")
             self.topology = TopologyData(json.loads(json_str))
         except Exception as e:
             print(f"  Warning: Failed to load topology data: {e}")
 
     # --- 4. Load Box Vectors ---
     # We check the first frame to see if box attribute exists
-    if 'box' in first_frame_data.attrs:
+    if "box" in first_frame_data.attrs:
         self.box_vectors = np.zeros((self.Nframes, 3, 3))
         for i, key in enumerate(frame_keys):
-            if 'box' in self.cndb[key].attrs:
-                self.box_vectors[i] = self.cndb[key].attrs['box']
+            if "box" in self.cndb[key].attrs:
+                self.box_vectors[i] = self.cndb[key].attrs["box"]
             else:
                 # If one frame is missing, use the previous frame or raise an error
-                if i > 0: self.box_vectors[i] = self.box_vectors[i-1]
+                if i > 0:
+                    self.box_vectors[i] = self.box_vectors[i - 1]
     else:
         self.box_vectors = None
 
     print(f"Loaded {self.filename}: {self.Nframes} frames, {self.Nbeads} beads.")
-    if self.topology: print(f"Topology: {self.topology}")
-    if self.box_vectors is not None: print(f"Box vectors loaded. Shape: {self.box_vectors.shape}")
-    
+    if self.topology:
+        print(f"Topology: {self.topology}")
+    if self.box_vectors is not None:
+        print(f"Box vectors loaded. Shape: {self.box_vectors.shape}")
+
     return self
-    
+
+
 def get_xyz(self, frames=[0, None, 1], beadSelection=None, XYZ=[0, 1, 2]):
     R"""
     Get the selected beads' 3D position from a **cndb** or **ndb** for multiple frames.
@@ -760,21 +819,25 @@ def get_xyz(self, frames=[0, None, 1], beadSelection=None, XYZ=[0, 1, 2]):
         raise RuntimeError("No file loaded. Call load() first.")
     # initialize frame list
     frame_list = []
-    # check beadSelection 
+    # check beadSelection
     if beadSelection is None:
         selection = np.arange(self.Nbeads)
     else:
         selection = np.array(beadSelection)
-    #print(f"Choosing Beads ID: {selection}")
+    # print(f"Choosing Beads ID: {selection}")
 
     # check frames number
     start, end, step = frames
     if end is None:
-        end = self.Nframes #+ 1 I'm not sure if I need this, in OpenMiChroM one'll need that.
+        end = (
+            self.Nframes
+        )  # + 1 I'm not sure if I need this, in OpenMiChroM one'll need that.
 
     # simple range check
-    if start < 0: start = 0
-    if end > self.Nframes: end = self.Nframes
+    if start < 0:
+        start = 0
+    if end > self.Nframes:
+        end = self.Nframes
 
     for i in range(start, end, step):
         try:
@@ -782,9 +845,9 @@ def get_xyz(self, frames=[0, None, 1], beadSelection=None, XYZ=[0, 1, 2]):
             if key not in self.cndb:
                 continue
             frame_data = np.array(self.cndb[key])
-            #print(f"Data structure of frame {i}: {frame_data.shape}")
+            # print(f"Data structure of frame {i}: {frame_data.shape}")
             selected_data = np.take(np.take(frame_data, selection, axis=0), XYZ, axis=1)
-            #coords = frame_data[selection][:, XYZ]
+            # coords = frame_data[selection][:, XYZ]
             frame_list.append(selected_data)
         except KeyError:
             print(f"Warning: Frame {i} doesn't exit, skip this frame")
@@ -794,9 +857,11 @@ def get_xyz(self, frames=[0, None, 1], beadSelection=None, XYZ=[0, 1, 2]):
     # Return the extracted data
     return np.array(frame_list)
 
+
 def close_trajectory(traj_instance):
-    if hasattr(traj_instance, 'cndb') and traj_instance.cndb:
+    if hasattr(traj_instance, "cndb") and traj_instance.cndb:
         traj_instance.cndb.close()
+
 
 def save_pdb(chrom_dyn_obj, **kwargs):
 
@@ -812,7 +877,7 @@ def save_pdb(chrom_dyn_obj, **kwargs):
         ),
     )
 
-    PBC = kwargs.get('PBC', False)
+    PBC = kwargs.get("PBC", False)
 
     # Unique residue names for different chains
     residue_names_by_chain = [
@@ -839,7 +904,9 @@ def save_pdb(chrom_dyn_obj, **kwargs):
     ]
 
     # Get atomic positions
-    state = chrom_dyn_obj.simulation.context.getState(getPositions=True, enforcePeriodicBox=PBC)
+    state = chrom_dyn_obj.simulation.context.getState(
+        getPositions=True, enforcePeriodicBox=PBC
+    )
     positions = state.getPositions(asNumpy=True).value_in_unit(unit.nanometer)
     topology = chrom_dyn_obj.topology  # OpenMM Topology
 
@@ -848,11 +915,13 @@ def save_pdb(chrom_dyn_obj, **kwargs):
         if PBC:
             # get box vectors
             box = chrom_dyn_obj.simulation.context.getState().getPeriodicBoxVectors()
-            a = box[0].x * 10.0 # nm to Angstrom for PDB
+            a = box[0].x * 10.0  # nm to Angstrom for PDB
             b = box[1].y * 10.0
             c = box[2].z * 10.0
             # PDB CRYST1 format: lenA lenB lenC alpha beta gamma SpaceGroup
-            pdb_file.write(f"CRYST1{a:9.3f}{b:9.3f}{c:9.3f}  90.00  90.00  90.00 P 1           1\n")
+            pdb_file.write(
+                f"CRYST1{a:9.3f}{b:9.3f}{c:9.3f}  90.00  90.00  90.00 P 1           1\n"
+            )
 
         pdb_file.write(f"MODEL     {chrom_dyn_obj.simulation.currentStep}\n")
 
