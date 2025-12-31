@@ -18,7 +18,7 @@ import warnings
 
 # for topology
 from .topology import TopologyData
-import json
+import json  # the saving parts save the topology using json
 
 # for GPU acceleration
 try:
@@ -700,16 +700,16 @@ class TrajectoryLoader:
         return np.array(pos)
 
 
-class ChromatinTrajectory:
+class Trajectory:
     def __init__(self, filename: str = None):
         # initialize attributes
         self.cndb = None
         self.filename = filename
         self.Nbeads = 0
         self.Nframes = 0
-        self.ChromSeq = []
-        self.uniqueChromSeq = set()
-        self.dictChromSeq = {}
+        self.chrom_seq = []
+        self.unique_chrom_seq = set()
+        self.dict_chrom_seq = {}
         self.topology = None
         self.box_vectors = None
 
@@ -735,7 +735,7 @@ class ChromatinTrajectory:
 
 
 # For using as independent functions
-# self should be the object of the class ChromatinTrajectory
+# self should be the object of the class Trajectory
 
 
 def load_trajectory(self, filename):
@@ -762,19 +762,19 @@ def load_trajectory(self, filename):
     # --- 2. Load Types ---
     if "types" in self.cndb:
         raw_types = self.cndb["types"]
-        self.ChromSeq = [
+        self.chrom_seq = [
             t.decode("utf-8") if isinstance(t, bytes) else t for t in raw_types
         ]
     else:
         print("  Warning: 'types' dataset not found. Assuming uniform bead types.")
         first_key = next(iter(self.cndb.keys()))
         n_beads = self.cndb[first_key].shape[0]
-        self.ChromSeq = ["U"] * n_beads
+        self.chrom_seq = ["U"] * n_beads
 
-    self.uniqueChromSeq = set(self.ChromSeq)
-    self.dictChromSeq = {
-        tt: [i for i, e in enumerate(self.ChromSeq) if e == tt]
-        for tt in self.uniqueChromSeq
+    self.unique_chrom_seq = set(self.chrom_seq)
+    self.dict_chrom_seq = {
+        tt: [i for i, e in enumerate(self.chrom_seq) if e == tt]
+        for tt in self.unique_chrom_seq
     }
 
     # --- 3. Load Topology JSON---
@@ -813,7 +813,7 @@ def load_trajectory(self, filename):
 
 def get_xyz(self, frames=[0, None, 1], beadSelection=None, XYZ=[0, 1, 2]):
     R"""
-    Get the selected beads' 3D position from a **cndb** or **ndb** for multiple frames.
+    Get the selected beads' 3D position from a **cndb** file for multiple frames.
     """
     if self.cndb is None:
         raise RuntimeError("No file loaded. Call load() first.")

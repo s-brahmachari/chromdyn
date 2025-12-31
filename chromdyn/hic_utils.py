@@ -16,7 +16,7 @@ from scipy.spatial.distance import pdist, squareform
 import h5py
 from typing import Optional
 
-# from cndb_tools import ChromatinTrajectory
+# from cndb_tools import Trajectory
 
 try:
     import cupy as cp
@@ -383,8 +383,8 @@ class HiCManager:
     def gen_pbc_hic_from_cndb(
         self,
         traj_file,
-        mu,
-        rc,
+        mu=2.0,
+        rc=2.0,
         p=None,
         platform="CPU",
         parallel=True,
@@ -395,7 +395,7 @@ class HiCManager:
         Generates a Hi-C matrix from a CNDB trajectory file using PBC (Minimum Image Convention)
         and a smooth probability function (Sigmoid/Power-law).
 
-        It uses the standard ChromatinTrajectory class to load data and box vectors.
+        It uses the standard Trajectory class to load data and box vectors.
 
         Args:
             traj_file (str): Path to .cndb file.
@@ -409,19 +409,19 @@ class HiCManager:
         """
         # 1. Import the standard loader
         try:
-            from .cndb_tools import ChromatinTrajectory
+            from .cndb_tools import Trajectory
         except ImportError:
             # Fallback: assume it's in the same package or user handles imports
             self.logger.warning(
-                "Could not import ChromatinTrajectory from chromdyn_pbc.tools. Trying global scope."
+                "Could not import Trajectory from chromdyn_pbc.tools. Trying global scope."
             )
-            # If ChromatinTrajectory is not imported, this will raise NameError, which is expected behavior
+            # If Trajectory is not imported, this will raise NameError, which is expected behavior
             # if the environment is not set up correctly.
 
         self.logger.info(f"Computing PBC Hi-C with mu={mu}, rc={rc}, p={p}...")
 
         # 2. Load Data using Standard Class
-        traj = ChromatinTrajectory(traj_file)
+        traj = Trajectory(traj_file)
 
         # Get Coordinates: (N_frames, N_beads, 3)
         # traj.xyz handles the slicing internally via frames=[start, end, step]
@@ -697,56 +697,6 @@ def _calc_pbc_hic_cpu_serial(traj, boxes, mu, rc, p):
         total_prob += prob
 
     return (total_prob / traj.shape[0]).astype(np.float32)
-
-
-# already implemented in _calc_HiC_from_traj_array_gpu
-r'''def _calc_pbc_hic_gpu(traj, boxes, mu, rc, p=None, batch_size=None):
-    """
-    GPU implementation of PBC Hi-C with smooth probability.
-    """
-    traj_cp = cp.array(traj, dtype=cp.float32)
-    
-    # Extract diagonal lengths for MIC from the (N, 3, 3) boxes array
-    # Resulting shape: (N_frames, 3)
-    boxes_diag_cp = cp.array(np.array([np.diag(b) for b in boxes]), dtype=cp.float32)
-    
-    n_frames, n_beads, _ = traj_cp.shape
-    
-    if batch_size is None:
-        batch_size = n_frames 
-
-    cumulative_prob = cp.zeros((n_beads, n_beads), dtype=cp.float32)
-
-    for i in range(0, n_frames, batch_size):
-        end = min(i + batch_size, n_frames)
-        batch_pos = traj_cp[i:end]      # (B, N, 3)
-        batch_box = boxes_diag_cp[i:end] # (B, 3)
-        
-        # Loop inside batch to manage memory (N^2 expansion is large)
-        for j in range(batch_pos.shape[0]):
-            pos = batch_pos[j] # (N, 3)
-            box = batch_box[j] # (3,)
-            
-            # 1. MIC Distance
-            diff = pos[:, cp.newaxis, :] - pos[cp.newaxis, :, :]
-            diff -= box * cp.round(diff / box)
-            r = cp.linalg.norm(diff, axis=-1)
-            
-            # 2. Probability Function
-            if p is not None:
-                term_power = 0.5 * (rc / (r + 1e-10)) ** p 
-                prob = cp.where(
-                    r <= rc,
-                    0.5 * (1 + cp.tanh(mu * (rc - r))),
-                    term_power
-                )
-            else:
-                prob = 0.5 * (1 + cp.tanh(mu * (rc - r)))
-            
-            cumulative_prob += prob
-            
-    hic_matrix = cumulative_prob / n_frames
-    return cp.asnumpy(hic_matrix)'''
 
 
 # def _calc_prob(data, mu, rc, p):

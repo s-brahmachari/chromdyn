@@ -9,7 +9,8 @@ import numpy as np
 import h5py
 import json
 from openmm.app import Simulation
-from openmm import System, State, app
+from openmm import System, State
+from openmm.app import Topology
 import openmm.unit as unit
 from openmm import CMMotionRemover
 import os
@@ -24,7 +25,7 @@ class SaveStructure:
         self,
         report_file: Union[str, Path],
         PBC: bool,
-        topology: app.Topology,
+        topology: Topology,
         reportInterval: int = 1000,
     ):
         self.filename: str = str(report_file)
