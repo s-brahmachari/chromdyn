@@ -16,7 +16,7 @@ from scipy.spatial.distance import pdist, squareform
 import h5py
 from typing import Optional
 
-#from .traj_utils import Trajectory
+# from .traj_utils import Trajectory
 
 try:
     import cupy as cp

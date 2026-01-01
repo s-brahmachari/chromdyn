@@ -16,8 +16,6 @@ import os
 import openmm.unit as unit
 import warnings
 
-# for topology
-from .topology import TopologyData
 
 # for GPU acceleration
 try:
@@ -664,8 +662,6 @@ class Analyzer:
         results["bin_centers"] = bin_centers
         return results
 
-    
-
 
 class TrajectoryLoader:
     """
@@ -742,47 +738,52 @@ class Trajectory:
         Reconstructs an OpenMM Topology object from HDF5 datasets.
         """
         from openmm.app import Topology, Element
-        
-        if 'topology' not in h5_file:
+
+        if "topology" not in h5_file:
             return None
-        
-        grp = h5_file['topology']
-        atoms_arr = grp['atoms'][:]
-        chain_ids = grp['chain_ids'][:]
-        res_names = grp['res_names'][:]
-        bonds_arr = grp['bonds'][:] if 'bonds' in grp else []
+
+        grp = h5_file["topology"]
+        atoms_arr = grp["atoms"][:]
+        chain_ids = grp["chain_ids"][:]
+        res_names = grp["res_names"][:]
+        bonds_arr = grp["bonds"][:] if "bonds" in grp else []
 
         new_top = Topology()
-        
+
         # 1. create Chains
-        created_chains = [new_top.addChain(cid.decode('utf-8') if isinstance(cid, bytes) else cid) for cid in chain_ids]
-        
+        created_chains = [
+            new_top.addChain(cid.decode("utf-8") if isinstance(cid, bytes) else cid)
+            for cid in chain_ids
+        ]
+
         # 2. create Residues and Atoms
         res_objs = {}
         atom_objs = []
         for i, atom_data in enumerate(atoms_arr):
-            name = atom_data['name'].decode('utf-8')
-            elem_sym = atom_data['element'].decode('utf-8')
-            res_idx = atom_data['res_idx']
-            chain_idx = atom_data['chain_idx']
-            
+            name = atom_data["name"].decode("utf-8")
+            elem_sym = atom_data["element"].decode("utf-8")
+            res_idx = atom_data["res_idx"]
+            chain_idx = atom_data["chain_idx"]
+
             # create Residue
             if res_idx not in res_objs:
                 rname = res_names[res_idx]
-                rname_str = rname.decode('utf-8') if isinstance(rname, bytes) else rname
-                res_objs[res_idx] = new_top.addResidue(rname_str, created_chains[chain_idx])
-            
+                rname_str = rname.decode("utf-8") if isinstance(rname, bytes) else rname
+                res_objs[res_idx] = new_top.addResidue(
+                    rname_str, created_chains[chain_idx]
+                )
+
             # create Atom
             try:
                 elem_obj = Element.getBySymbol(elem_sym)
             except KeyError:
                 elem_obj = None
             atom_objs.append(new_top.addAtom(name, elem_obj, res_objs[res_idx]))
-            
+
         # 3. create Bonds
         for idx1, idx2 in bonds_arr:
             new_top.addBond(atom_objs[idx1], atom_objs[idx2])
-            
+
         return new_top
 
     @property
@@ -790,19 +791,19 @@ class Trajectory:
         """
         Returns a summary list of tuples: [(ChainID, NumAtoms), ...]
         Example: [('C1', 100), ('C2', 50)]
-        
+
         Migrated from old TopologyData class to support native OpenMM Topology.
         """
         if self.topology is None:
             return []
-        
+
         info = []
         # iterate over chains
         for chain in self.topology.chains():
             # calculate number of atoms
             n_atoms = sum(1 for _ in chain.atoms())
             info.append((chain.id, n_atoms))
-        
+
         return info
 
 
@@ -874,7 +875,9 @@ def load_trajectory(self, filename):
 
     print(f"Loaded {self.filename}: {self.Nframes} frames, {self.Nbeads} beads.")
     if self.topology:
-        print(f"Topology loaded: {self.topology.getNumAtoms()} atoms, {self.topology.getNumBonds()} bonds")
+        print(
+            f"Topology loaded: {self.topology.getNumAtoms()} atoms, {self.topology.getNumBonds()} bonds"
+        )
     if self.box_vectors is not None:
         print(f"Box vectors loaded. Shape: {self.box_vectors.shape}")
 
