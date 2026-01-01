@@ -18,7 +18,6 @@ import warnings
 
 # for topology
 from .topology import TopologyData
-import json  # the saving parts save the topology using json
 
 # for GPU acceleration
 try:
@@ -169,7 +168,7 @@ class Analyzer:
                 f"positions must have shape (N, 3) or (T, N, 3), got {positions.shape}"
             )
 
-    # This function relies on the ChromSeq attribute of the trajectory object
+    # This function relies on the chrom_seq attribute of the trajectory object
     @staticmethod
     def compute_RG_type(traj):
         """
@@ -178,7 +177,7 @@ class Analyzer:
         Parameters:
             traj: Trajectory object, which must contain the following attributes:
                 - traj.xyz: Coordinate array with shape (T, N, 3)
-                - traj.ChromSeq: A list or array of length N, containing bead types (e.g., 'A', 'B')
+                - traj.chrom_seq: A list or array of length N, containing bead types (e.g., 'A', 'B')
 
         Returns:
             results (dict): A dictionary containing Rg data.
@@ -188,8 +187,8 @@ class Analyzer:
         # 1. Get coordinates and sequence
         # Ensure xyz is numpy array
         all_positions = np.asarray(traj.xyz(frames=[0, None, 1], beadSelection=None))
-        # Ensure ChromSeq is numpy array for boolean indexing
-        bead_types = np.asarray(traj.ChromSeq)
+        # Ensure chrom_seq is numpy array for boolean indexing
+        bead_types = np.asarray(traj.chrom_seq)
 
         # 2. Initialize result dictionary
         results = {}
@@ -665,6 +664,8 @@ class Analyzer:
         results["bin_centers"] = bin_centers
         return results
 
+    
+
 
 class TrajectoryLoader:
     """
@@ -733,6 +734,77 @@ class Trajectory:
         """destruct the object and try to close the file"""
         self.close()
 
+    # chromdyn/traj_utils.py
+
+    @staticmethod
+    def _load_topology_from_h5(h5_file):
+        """
+        Reconstructs an OpenMM Topology object from HDF5 datasets.
+        """
+        from openmm.app import Topology, Element
+        
+        if 'topology' not in h5_file:
+            return None
+        
+        grp = h5_file['topology']
+        atoms_arr = grp['atoms'][:]
+        chain_ids = grp['chain_ids'][:]
+        res_names = grp['res_names'][:]
+        bonds_arr = grp['bonds'][:] if 'bonds' in grp else []
+
+        new_top = Topology()
+        
+        # 1. create Chains
+        created_chains = [new_top.addChain(cid.decode('utf-8') if isinstance(cid, bytes) else cid) for cid in chain_ids]
+        
+        # 2. create Residues and Atoms
+        res_objs = {}
+        atom_objs = []
+        for i, atom_data in enumerate(atoms_arr):
+            name = atom_data['name'].decode('utf-8')
+            elem_sym = atom_data['element'].decode('utf-8')
+            res_idx = atom_data['res_idx']
+            chain_idx = atom_data['chain_idx']
+            
+            # create Residue
+            if res_idx not in res_objs:
+                rname = res_names[res_idx]
+                rname_str = rname.decode('utf-8') if isinstance(rname, bytes) else rname
+                res_objs[res_idx] = new_top.addResidue(rname_str, created_chains[chain_idx])
+            
+            # create Atom
+            try:
+                elem_obj = Element.getBySymbol(elem_sym)
+            except KeyError:
+                elem_obj = None
+            atom_objs.append(new_top.addAtom(name, elem_obj, res_objs[res_idx]))
+            
+        # 3. create Bonds
+        for idx1, idx2 in bonds_arr:
+            new_top.addBond(atom_objs[idx1], atom_objs[idx2])
+            
+        return new_top
+
+    @property
+    def chain_info(self):
+        """
+        Returns a summary list of tuples: [(ChainID, NumAtoms), ...]
+        Example: [('C1', 100), ('C2', 50)]
+        
+        Migrated from old TopologyData class to support native OpenMM Topology.
+        """
+        if self.topology is None:
+            return []
+        
+        info = []
+        # iterate over chains
+        for chain in self.topology.chains():
+            # calculate number of atoms
+            n_atoms = sum(1 for _ in chain.atoms())
+            info.append((chain.id, n_atoms))
+        
+        return info
+
 
 # For using as independent functions
 # self should be the object of the class Trajectory
@@ -777,16 +849,14 @@ def load_trajectory(self, filename):
         for tt in self.unique_chrom_seq
     }
 
-    # --- 3. Load Topology JSON---
+    # --- 3. Load Native Topology (replace the original JSON logic) ---
     self.topology = None
-    if "topology_json" in self.cndb:
+    if "topology" in self.cndb:
         try:
-            json_str = self.cndb["topology_json"][0]
-            if isinstance(json_str, bytes):
-                json_str = json_str.decode("utf-8")
-            self.topology = TopologyData(json.loads(json_str))
+            # call the native HDF5 reading function below
+            self.topology = self._load_topology_from_h5(self.cndb)
         except Exception as e:
-            print(f"  Warning: Failed to load topology data: {e}")
+            print(f"  Warning: Failed to load topology data from HDF5: {e}")
 
     # --- 4. Load Box Vectors ---
     # We check the first frame to see if box attribute exists
@@ -804,7 +874,7 @@ def load_trajectory(self, filename):
 
     print(f"Loaded {self.filename}: {self.Nframes} frames, {self.Nbeads} beads.")
     if self.topology:
-        print(f"Topology: {self.topology}")
+        print(f"Topology loaded: {self.topology.getNumAtoms()} atoms, {self.topology.getNumBonds()} bonds")
     if self.box_vectors is not None:
         print(f"Box vectors loaded. Shape: {self.box_vectors.shape}")
 

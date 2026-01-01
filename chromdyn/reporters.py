@@ -7,7 +7,6 @@
 #  * --------------------------------------------------------------------------- *
 import numpy as np
 import h5py
-import json
 from openmm.app import Simulation
 from openmm import System, State
 from openmm.app import Topology
@@ -70,56 +69,54 @@ class SaveStructure:
 
     def _save_full_topology(self):
         """
-        Serializes the OpenMM Topology into a JSON string and saves it.
-        Structure:
-        {
-            "chains": [
-                {"index": 0, "id": "C1", "residues": [...]}
-            ],
-            "bonds": [[atom_idx1, atom_idx2], ...]
-        }
+        Saves the OpenMM Topology directly to HDF5 datasets without using JSON.
         """
-        topology_data = {"chains": [], "bonds": []}
+        if 'topology' in self.saveFile:
+            del self.saveFile['topology']
+        top_grp = self.saveFile.create_group('topology')
 
-        # Helper to map Atom Object -> Global Index
-        atom_to_index = {atom: i for i, atom in enumerate(self.topology.atoms())}
+        # 1. extract atom data
+        # use structured array (Structured Array) to store
+        atom_dtype = np.dtype([
+            ('name', 'S20'), 
+            ('element', 'S5'), 
+            ('res_idx', 'i4'), 
+            ('chain_idx', 'i4')
+        ])
+        
+        chain_list = list(self.topology.chains())
+        res_list = list(self.topology.residues())
+        chain_to_idx = {c: i for i, c in enumerate(chain_list)}
+        res_to_idx = {r: i for i, r in enumerate(res_list)}
+        
+        atoms_data = []
+        for atom in self.topology.atoms():
+            if atom.element is None:
+                elem = "X"
+            elif hasattr(atom.element, 'symbol'):
+                elem = atom.element.symbol  # This is an Element object
+            else:
+                elem = str(atom.element)
+            atoms_data.append((
+                atom.name.encode('utf-8'),
+                elem.encode('utf-8'),
+                res_to_idx[atom.residue],
+                chain_to_idx[atom.residue.chain]
+            ))
+        top_grp.create_dataset('atoms', data=np.array(atoms_data, dtype=atom_dtype))
 
-        # 1. Serialize Hierarchy (Chain -> Residue -> Atom)
-        for chain in self.topology.chains():
-            chain_dict = {"index": chain.index, "id": chain.id, "residues": []}
-            for res in chain.residues():
-                res_dict = {
-                    "index": res.index,
-                    "name": res.name,
-                    "id": res.id,
-                    "atoms": [],
-                }
-                for atom in res.atoms():
-                    atom_dict = {
-                        "index": atom.index,
-                        "name": atom.name,
-                        "type": (
-                            atom.element
-                            if isinstance(atom.element, str)
-                            else atom.element.symbol
-                        ),
-                    }
-                    res_dict["atoms"].append(atom_dict)
-                chain_dict["residues"].append(res_dict)
-            topology_data["chains"].append(chain_dict)
+        # 2. extract bond data
+        atom_to_idx = {a: i for i, a in enumerate(self.topology.atoms())}
+        bonds_data = [[atom_to_idx[b.atom1], atom_to_idx[b.atom2]] for b in self.topology.bonds()]
+        if bonds_data:
+            top_grp.create_dataset('bonds', data=np.array(bonds_data, dtype='i4'))
 
-        # 2. Serialize Bonds
-        # Store as list of [index_A, index_B]
-        for bond in self.topology.bonds():
-            a1_idx = atom_to_index[bond.atom1]
-            a2_idx = atom_to_index[bond.atom2]
-            topology_data["bonds"].append([a1_idx, a2_idx])
-
-        # 3. Save to HDF5 as JSON string
-        json_str = json.dumps(topology_data)
-        dt = h5py.special_dtype(vlen=str)
-        dset = self.saveFile.create_dataset("topology_json", shape=(1,), dtype=dt)
-        dset[0] = json_str
+        # 3. store metadata
+        dt_str = h5py.special_dtype(vlen=str)
+        chain_ids = [c.id for c in chain_list]
+        res_names = [r.name for r in res_list]
+        top_grp.create_dataset('chain_ids', data=np.array(chain_ids, dtype=dt_str))
+        top_grp.create_dataset('res_names', data=np.array(res_names, dtype=dt_str))
 
     def close(self) -> None:
         self.saveFile.close()

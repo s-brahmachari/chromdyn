@@ -241,7 +241,7 @@ def visualize(
         print("Error: Topology not found in trajectory.")
         return
 
-    chain_info_list = traj.topology.chain_info
+    chain_info_list = traj.chain_info
     n_chains = len(chain_info_list)
     bead_counts = [count for _, count in chain_info_list]
 
@@ -307,7 +307,7 @@ def visualize(
     # Mode: Type
     if color_mode == "type":
         # Get all types
-        types_seq = getattr(traj, "ChromSeq", getattr(traj, "types", None))
+        types_seq = getattr(traj, "chrom_seq", getattr(traj, "types", None))
         # if types are provided, use them
         if types is not None:
             types_seq = types
@@ -524,7 +524,7 @@ def visualize_animation(
         print("Error: Topology not found.")
         return
 
-    chain_info = traj.topology.chain_info
+    chain_info = traj.chain_info
     n_chains = len(chain_info)
     bead_counts = [c[1] for c in chain_info]
     cumulative_indices = np.cumsum([0] + bead_counts)
@@ -569,7 +569,7 @@ def visualize_animation(
     type_legend_handles = {}
 
     if color_mode == "type":
-        types_seq = getattr(traj, "ChromSeq", getattr(traj, "types", None))
+        types_seq = getattr(traj, "chrom_seq", getattr(traj, "types", None))
         # if types are provided, use them
         if types is not None:
             types_seq = types
@@ -811,7 +811,7 @@ def visualize_pbc_images(
         return
 
     # Load Coords
-    chain_info = traj.topology.chain_info
+    chain_info = traj.chain_info
     bead_counts = [c[1] for c in chain_info]
     cumulative_indices = np.cumsum([0] + bead_counts)
     chain_selections = [
@@ -849,7 +849,7 @@ def visualize_pbc_images(
         types_seq = (
             types
             if types is not None
-            else getattr(traj, "ChromSeq", getattr(traj, "types", None))
+            else getattr(traj, "chrom_seq", getattr(traj, "types", None))
         )
         if types_seq is None:
             color_mode = "chain"
