@@ -14,6 +14,7 @@ import numpy as np
 import h5py
 import os
 import openmm.unit as unit
+from openmm.app import Topology, Element
 import warnings
 
 
@@ -165,60 +166,6 @@ class Analyzer:
             raise ValueError(
                 f"positions must have shape (N, 3) or (T, N, 3), got {positions.shape}"
             )
-
-    # This function relies on the chrom_seq attribute of the trajectory object
-    @staticmethod
-    def compute_RG_type(traj):
-        """
-        Function to compute Radius of Gyration (Rg) classified by particle type.
-
-        Parameters:
-            traj: Trajectory object, which must contain the following attributes:
-                - traj.xyz: Coordinate array with shape (T, N, 3)
-                - traj.chrom_seq: A list or array of length N, containing bead types (e.g., 'A', 'B')
-
-        Returns:
-            results (dict): A dictionary containing Rg data.
-                            key: 'general' and each type name (e.g., 'A', 'B')
-                            value: Corresponding Rg numpy array (of length T)
-        """
-        # 1. Get coordinates and sequence
-        # Ensure xyz is numpy array
-        all_positions = np.asarray(traj.xyz(frames=[0, None, 1], beadSelection=None))
-        # Ensure chrom_seq is numpy array for boolean indexing
-        bead_types = np.asarray(traj.chrom_seq)
-
-        # 2. Initialize result dictionary
-        results = {}
-
-        # 3. Calculate 'general' Rg (all beads)
-        # Always calculate this
-        results["general"] = Analyzer.compute_RG(all_positions)
-
-        # 4. Check if system is Homogeneous (Homogeneous)
-        # np.unique returns sorted unique type list
-        unique_types = np.unique(bead_types)
-
-        # If type count is greater than 1, it's a Heterogeneous (Heterogeneous) system, need to calculate by type
-        if len(unique_types) > 1:
-            for t_type in unique_types:
-                # Create boolean mask (Boolean Mask)
-                # mask length equals beads count, True means current type
-                mask = bead_types == t_type
-
-                # Slice
-                # Dimension meaning: [all frames, mask filtered column(beads), all coordinates]
-                subset_positions = all_positions[:, mask, :]
-
-                # Ensure type name is string format as key
-                key_name = str(t_type)
-
-                # Calculate Rg for this type and store in dictionary
-                results[key_name] = Analyzer.compute_RG(subset_positions)
-
-        # If len(unique_types) == 1, loop is skipped, only returns general, avoid duplicate calculation
-
-        return results
 
     # =========================================================================
     # Public Interface: VACF
@@ -697,13 +644,21 @@ class TrajectoryLoader:
         return np.array(pos)
 
 
+# For using as independent functions
+# self should be the object of the class Trajectory
+
+
 class Trajectory:
+    """
+    Trajectory class for processing cndb/xyz/pdb formats.
+    """
+
     def __init__(self, filename: str = None):
-        # initialize attributes
+        # initialize attributes (Snake Case applied)
         self.cndb = None
         self.filename = filename
-        self.Nbeads = 0
-        self.Nframes = 0
+        self.n_beads = 0  # renamed from Nbeads
+        self.n_frames = 0  # renamed from Nframes
         self.chrom_seq = []
         self.unique_chrom_seq = set()
         self.dict_chrom_seq = {}
@@ -715,29 +670,124 @@ class Trajectory:
             self.load(filename)
 
     def load(self, filename: str):
-        """call external load_trajectory function"""
-        return load_trajectory(self, filename)
+        """
+        Loads cndb file, including types, topology, and PBC box vectors.
+        """
+        self.filename = filename
+        if not os.path.exists(filename):
+            raise FileNotFoundError(f"File not found: {filename}")
 
-    def xyz(self, frames=[0, None, 1], beadSelection=None, XYZ=[0, 1, 2]):
-        """call external get_xyz function"""
-        return get_xyz(self, frames, beadSelection, XYZ)
+        self.cndb = h5py.File(filename, "r")
+
+        # Sort frame keys
+        frame_keys = sorted([k for k in self.cndb.keys() if k.isdigit()], key=int)
+        self.n_frames = len(frame_keys)
+
+        if self.n_frames == 0:
+            print("Warning: No frames found in file.")
+            return self
+
+        # --- 1. Load Bead Number ---
+        first_frame_data = self.cndb[frame_keys[0]]
+        self.n_beads = first_frame_data.shape[0]
+
+        # --- 2. Load Types ---
+        if "types" in self.cndb:
+            raw_types = self.cndb["types"]
+            self.chrom_seq = [
+                t.decode("utf-8") if isinstance(t, bytes) else t for t in raw_types
+            ]
+        else:
+            print("  Warning: 'types' dataset not found. Assuming uniform bead types.")
+            self.chrom_seq = ["U"] * self.n_beads
+
+        self.unique_chrom_seq = set(self.chrom_seq)
+        self.dict_chrom_seq = {
+            tt: [i for i, e in enumerate(self.chrom_seq) if e == tt]
+            for tt in self.unique_chrom_seq
+        }
+
+        # --- 3. Load Native Topology ---
+        self.topology = None
+        if "topology" in self.cndb:
+            try:
+                self.topology = self._load_topology_from_h5(self.cndb)
+            except Exception as e:
+                print(f"  Warning: Failed to load topology data from HDF5: {e}")
+
+        # --- 4. Load Box Vectors ---
+        if "box" in first_frame_data.attrs:
+            self.box_vectors = np.zeros((self.n_frames, 3, 3))
+            for i, key in enumerate(frame_keys):
+                if "box" in self.cndb[key].attrs:
+                    self.box_vectors[i] = self.cndb[key].attrs["box"]
+                elif i > 0:
+                    self.box_vectors[i] = self.box_vectors[i - 1]
+        else:
+            self.box_vectors = None
+
+        print(f"Loaded {self.filename}: {self.n_frames} frames, {self.n_beads} beads.")
+        if self.topology:
+            print(
+                f"Topology loaded: {self.topology.getNumAtoms()} atoms, {self.topology.getNumBonds()} bonds"
+            )
+        if self.box_vectors is not None:
+            print(f"Box vectors loaded. Shape: {self.box_vectors.shape}")
+
+        return self
+
+    def xyz(self, frames=[0, None, 1], bead_selection=None, xyz_cols=[0, 1, 2]):
+        """
+        Get the selected beads' 3D position from a **cndb** file for multiple frames.
+        """
+        if self.cndb is None:
+            raise RuntimeError("No file loaded. Call load() first.")
+
+        frame_list = []
+
+        if bead_selection is None:
+            selection = np.arange(self.n_beads)
+        else:
+            selection = np.array(bead_selection)
+
+        start, end, step = frames
+        if end is None:
+            end = self.n_frames
+
+        # Range check
+        start = max(0, start)
+        end = min(end, self.n_frames)
+
+        for i in range(start, end, step):
+            try:
+                key = str(i)
+                if key not in self.cndb:
+                    continue
+                frame_data = np.array(self.cndb[key])
+                selected_data = np.take(
+                    np.take(frame_data, selection, axis=0), xyz_cols, axis=1
+                )
+                frame_list.append(selected_data)
+            except KeyError:
+                print(f"Warning: Frame {i} doesn't exist, skipping.")
+            except Exception as e:
+                print(f"Error extracting data from frame {i}: {e}")
+
+        return np.array(frame_list)
 
     def close(self):
-        """call external close_trajectory function"""
-        close_trajectory(self)
+        """Close the HDF5 file handle."""
+        if hasattr(self, "cndb") and self.cndb:
+            self.cndb.close()
 
     def __del__(self):
-        """destruct the object and try to close the file"""
         self.close()
-
-    # chromdyn/traj_utils.py
 
     @staticmethod
     def _load_topology_from_h5(h5_file):
         """
         Reconstructs an OpenMM Topology object from HDF5 datasets.
         """
-        from openmm.app import Topology, Element
 
         if "topology" not in h5_file:
             return None
@@ -790,150 +840,80 @@ class Trajectory:
     def chain_info(self):
         """
         Returns a summary list of tuples: [(ChainID, NumAtoms), ...]
-        Example: [('C1', 100), ('C2', 50)]
-
-        Migrated from old TopologyData class to support native OpenMM Topology.
         """
         if self.topology is None:
             return []
-
         info = []
-        # iterate over chains
         for chain in self.topology.chains():
-            # calculate number of atoms
             n_atoms = sum(1 for _ in chain.atoms())
             info.append((chain.id, n_atoms))
-
         return info
 
+    # As requested, this function is added to the Trajectory class
+    def compute_rg_type(self):
+        """
+        Function to compute Radius of Gyration (Rg) classified by particle type.
 
-# For using as independent functions
-# self should be the object of the class Trajectory
+        Parameters:
+            traj: Trajectory object, which must contain the following attributes:
+                - traj.xyz: Coordinate array with shape (T, N, 3)
+                - traj.chrom_seq: A list or array of length N, containing bead types (e.g., 'A', 'B')
 
+        Returns:
+            results (dict): A dictionary containing Rg data.
+                            key: 'general' and each type name (e.g., 'A', 'B')
+                            value: Corresponding Rg numpy array (of length T)
+        """
 
-def load_trajectory(self, filename):
-    R"""
-    Loads cndb file, including types, topology, and PBC box vectors.
-    """
-    self.filename = filename
-    if not os.path.exists(filename):
-        raise FileNotFoundError(f"File not found: {filename}")
+        # 1. Get coordinates and sequence from SELF
+        all_positions = np.asarray(self.xyz(frames=[0, None, 1], bead_selection=None))
+        bead_types = np.asarray(self.chrom_seq)
 
-    self.cndb = h5py.File(filename, "r")
+        # 2. Initialize result dictionary
+        results = {}
 
-    frame_keys = sorted([k for k in self.cndb.keys() if k.isdigit()], key=int)
-    self.Nframes = len(frame_keys)
+        # 3. Calculate 'general' Rg (all beads)
+        # Always calculate this
+        results["general"] = Analyzer.compute_RG(all_positions)
 
-    if self.Nframes == 0:
-        print("Warning: No frames found in file.")
-        return self
+        # 4. Check if system is Heterogeneous
+        unique_types = np.unique(bead_types)
 
-    # --- 1. Load Bead Number ---
-    first_frame_data = self.cndb[frame_keys[0]]
-    self.Nbeads = first_frame_data.shape[0]
+        # If type count is greater than 1, it's a Heterogeneous (Heterogeneous) system, need to calculate by type
+        if len(unique_types) > 1:
+            for t_type in unique_types:
+                # Create boolean mask (Boolean Mask)
+                # mask length equals beads count, True means current type
+                mask = bead_types == t_type
 
-    # --- 2. Load Types ---
-    if "types" in self.cndb:
-        raw_types = self.cndb["types"]
-        self.chrom_seq = [
-            t.decode("utf-8") if isinstance(t, bytes) else t for t in raw_types
-        ]
-    else:
-        print("  Warning: 'types' dataset not found. Assuming uniform bead types.")
-        first_key = next(iter(self.cndb.keys()))
-        n_beads = self.cndb[first_key].shape[0]
-        self.chrom_seq = ["U"] * n_beads
+                # Slice
+                # Dimension meaning: [all frames, mask filtered column(beads), all coordinates]
+                subset_positions = all_positions[:, mask, :]
 
-    self.unique_chrom_seq = set(self.chrom_seq)
-    self.dict_chrom_seq = {
-        tt: [i for i, e in enumerate(self.chrom_seq) if e == tt]
-        for tt in self.unique_chrom_seq
-    }
+                # Ensure type name is string format as key
+                key_name = str(t_type)
 
-    # --- 3. Load Native Topology (replace the original JSON logic) ---
-    self.topology = None
-    if "topology" in self.cndb:
-        try:
-            # call the native HDF5 reading function below
-            self.topology = self._load_topology_from_h5(self.cndb)
-        except Exception as e:
-            print(f"  Warning: Failed to load topology data from HDF5: {e}")
+                # Calculate Rg for this type and store in dictionary
+                results[key_name] = Analyzer.compute_RG(subset_positions)
 
-    # --- 4. Load Box Vectors ---
-    # We check the first frame to see if box attribute exists
-    if "box" in first_frame_data.attrs:
-        self.box_vectors = np.zeros((self.Nframes, 3, 3))
-        for i, key in enumerate(frame_keys):
-            if "box" in self.cndb[key].attrs:
-                self.box_vectors[i] = self.cndb[key].attrs["box"]
-            else:
-                # If one frame is missing, use the previous frame or raise an error
-                if i > 0:
-                    self.box_vectors[i] = self.box_vectors[i - 1]
-    else:
-        self.box_vectors = None
+        # If len(unique_types) == 1, loop is skipped, only returns general, avoid duplicate calculation
 
-    print(f"Loaded {self.filename}: {self.Nframes} frames, {self.Nbeads} beads.")
-    if self.topology:
-        print(
-            f"Topology loaded: {self.topology.getNumAtoms()} atoms, {self.topology.getNumBonds()} bonds"
-        )
-    if self.box_vectors is not None:
-        print(f"Box vectors loaded. Shape: {self.box_vectors.shape}")
-
-    return self
+        return results
 
 
-def get_xyz(self, frames=[0, None, 1], beadSelection=None, XYZ=[0, 1, 2]):
-    R"""
-    Get the selected beads' 3D position from a **cndb** file for multiple frames.
-    """
-    if self.cndb is None:
-        raise RuntimeError("No file loaded. Call load() first.")
-    # initialize frame list
-    frame_list = []
-    # check beadSelection
-    if beadSelection is None:
-        selection = np.arange(self.Nbeads)
-    else:
-        selection = np.array(beadSelection)
-    # print(f"Choosing Beads ID: {selection}")
+# --- External Wrappers (For Backward Compatibility / Functional Style) ---
+def load_trajectory(traj_instance, filename):
+    return traj_instance.load(filename)
 
-    # check frames number
-    start, end, step = frames
-    if end is None:
-        end = (
-            self.Nframes
-        )  # + 1 I'm not sure if I need this, in OpenMiChroM one'll need that.
 
-    # simple range check
-    if start < 0:
-        start = 0
-    if end > self.Nframes:
-        end = self.Nframes
-
-    for i in range(start, end, step):
-        try:
-            key = str(i)
-            if key not in self.cndb:
-                continue
-            frame_data = np.array(self.cndb[key])
-            # print(f"Data structure of frame {i}: {frame_data.shape}")
-            selected_data = np.take(np.take(frame_data, selection, axis=0), XYZ, axis=1)
-            # coords = frame_data[selection][:, XYZ]
-            frame_list.append(selected_data)
-        except KeyError:
-            print(f"Warning: Frame {i} doesn't exit, skip this frame")
-        except Exception as e:
-            print(f"Error occurs: {e} when extract data from frame {i}.")
-
-    # Return the extracted data
-    return np.array(frame_list)
+def get_xyz(
+    traj_instance, frames=[0, None, 1], bead_selection=None, xyz_cols=[0, 1, 2]
+):
+    return traj_instance.get_xyz(frames, bead_selection, xyz_cols)
 
 
 def close_trajectory(traj_instance):
-    if hasattr(traj_instance, "cndb") and traj_instance.cndb:
-        traj_instance.cndb.close()
+    traj_instance.close()
 
 
 def save_pdb(chrom_dyn_obj, **kwargs):

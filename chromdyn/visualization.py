@@ -262,7 +262,7 @@ def visualize(
 
             # xyz returns (n_frames, n_beads, 3), take [0] for single frame
             data = traj.xyz(
-                frames=[select_frame, select_frame + 1, 1], beadSelection=sel_list
+                frames=[select_frame, select_frame + 1, 1], bead_selection=sel_list
             )
 
             if data.shape[0] > 0:
@@ -532,7 +532,7 @@ def visualize_animation(
         np.arange(s, e) for s, e in zip(cumulative_indices[:-1], cumulative_indices[1:])
     ]
 
-    total_frames = traj.Nframes
+    total_frames = traj.n_frames
     if end_frame is None or end_frame > total_frames:
         end_frame = total_frames
     if start_frame < 0:
@@ -546,7 +546,7 @@ def visualize_animation(
         for sel in chain_selections:
             # [FIX]: Convert to list to prevent 'truth value of array' error
             sel_list = sel.tolist()
-            data = traj.xyz(frames=[start_frame, end_frame, 1], beadSelection=sel_list)
+            data = traj.xyz(frames=[start_frame, end_frame, 1], bead_selection=sel_list)
             polymer_coords_all_chains_orig.append(np.nan_to_num(data))
     except Exception as e:
         print(f"Error calling traj.xyz: {e}")
@@ -823,7 +823,7 @@ def visualize_pbc_images(
     try:
         for sel in chain_selections:
             data = traj.xyz(
-                frames=[select_frame, select_frame + 1, 1], beadSelection=sel
+                frames=[select_frame, select_frame + 1, 1], bead_selection=sel
             )
             if data.shape[0] > 0:
                 polymer_coords_orig.append(np.nan_to_num(data[0]))
